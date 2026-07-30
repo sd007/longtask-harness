@@ -4,13 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
+import platform
 import re
+import signal
 import subprocess
 import sys
 import tempfile
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -68,6 +73,11 @@ EDITABLE_STATUSES = {
     "BLOCKED",
 }
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+LOCKFILE_NAMES = (
+    "Cargo.lock", "Gemfile.lock", "Package.resolved", "composer.lock",
+    "go.sum", "package-lock.json", "pnpm-lock.yaml", "poetry.lock",
+    "requirements.txt", "uv.lock", "yarn.lock",
+)
 
 
 class GoalFlowError(RuntimeError):
@@ -98,6 +108,22 @@ def atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
     finally:
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
+
+
+@contextmanager
+def controller_lock(root: Path, exclusive: bool):
+    store = goal_store(root)
+    if not store.exists() and not exclusive:
+        yield
+        return
+    store.mkdir(parents=True, exist_ok=True)
+    with (store / "controller.lock").open("a+", encoding="utf-8") as handle:
+        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        fcntl.flock(handle.fileno(), operation)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def find_root(start: str | None) -> Path:
@@ -147,12 +173,24 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
     state.setdefault("dimensions", {})
     # Goals created before v0.3 keep the original strict contract.
     state.setdefault("profile", "strict")
+    state.setdefault("state_revision", 0)
+    state.setdefault("contract_version", 1)
     return goal_id, directory, state
 
 
 def save_state(directory: Path, state: dict[str, Any]) -> None:
+    state_path = directory / "state.json"
+    expected_revision = int(state.get("state_revision", 0))
+    if state_path.exists():
+        current = load_json(state_path)
+        current_revision = int(current.get("state_revision", 0))
+        if current_revision != expected_revision:
+            raise GoalFlowError(
+                f"State revision conflict: expected {expected_revision}, found {current_revision}"
+            )
+    state["state_revision"] = expected_revision + 1
     state["updated_at"] = now()
-    atomic_json_write(directory / "state.json", state)
+    atomic_json_write(state_path, state)
 
 
 def deactivate_goal(root: Path, goal_id: str) -> None:
@@ -199,6 +237,8 @@ def definitions_hash(state: dict[str, Any]) -> str:
             for key, value in sorted(state.get("dimensions", {}).items())
         },
     }
+    if int(state.get("contract_version", 1)) >= 2:
+        definitions["profile"] = state.get("profile", "strict")
     raw = json.dumps(definitions, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -216,6 +256,40 @@ def current_git_sha(root: Path) -> str:
 
 def current_branch(root: Path) -> str | None:
     return run_git(root, "branch", "--show-current")
+
+
+def current_worktree_identity(root: Path) -> dict[str, str]:
+    top = run_git(root, "rev-parse", "--show-toplevel")
+    git_dir = run_git(root, "rev-parse", "--absolute-git-dir")
+    branch = current_branch(root)
+    if not top or not git_dir:
+        raise GoalFlowError("Worktree binding requires a Git worktree")
+    if not branch:
+        raise GoalFlowError("Worktree binding requires a named branch; detached HEAD is not supported")
+    return {
+        "root": str(Path(top).resolve()),
+        "git_dir": str(Path(git_dir).resolve()),
+        "branch": branch,
+    }
+
+
+def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
+    if not state.get("approved"):
+        return
+    binding = state.get("worktree_binding")
+    if not binding:
+        raise GoalFlowError("Approved goal is not bound; run bind-worktree on its implementation branch")
+    current = current_worktree_identity(root)
+    mismatches = [
+        key for key in ("root", "git_dir", "branch")
+        if binding.get(key) != current.get(key)
+    ]
+    if mismatches:
+        rendered = ", ".join(
+            f"{key}={current.get(key)!r} (expected {binding.get(key)!r})"
+            for key in mismatches
+        )
+        raise GoalFlowError(f"Worktree binding mismatch: {rendered}")
 
 
 def product_status(root: Path) -> str | None:
@@ -307,6 +381,8 @@ def validate_state(state: dict[str, Any]) -> list[str]:
         errors.append(f"invalid status: {state.get('status')}")
     if state.get("profile", "strict") not in PROFILES:
         errors.append(f"invalid profile: {state.get('profile')}")
+    if not isinstance(state.get("state_revision", 0), int) or state.get("state_revision", 0) < 0:
+        errors.append("invalid state_revision")
     for req_id, item in state.get("requirements", {}).items():
         if item.get("status") not in REQUIREMENT_STATUSES:
             errors.append(f"invalid requirement status for {req_id}")
@@ -644,6 +720,9 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "title": args.title,
         "goal_revision": 1,
         "profile": args.profile,
+        "contract_version": 2,
+        "state_revision": 0,
+        "worktree_binding": None,
         "status": "PLANNING",
         "approved": False,
         "approved_design_hash": None,
@@ -782,6 +861,22 @@ def cmd_plan_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     return {"goal_id": goal_id, **result}
 
 
+def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot bind immutable goal {state['status']}")
+    if not state.get("approved"):
+        raise GoalFlowError("Approve the design before binding its implementation worktree")
+    if not product_tree_is_clean(root):
+        raise GoalFlowError("Commit or clean product-tree changes before binding the worktree")
+    binding = current_worktree_identity(root)
+    state["worktree_binding"] = binding
+    state["branch"] = binding["branch"]
+    save_state(directory, state)
+    append_evidence(directory, "Worktree bound", binding)
+    return {"ok": True, "message": "Worktree bound", "binding": binding, "state": state}
+
+
 def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] not in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
@@ -818,6 +913,8 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot record evidence for immutable goal {state['status']}")
+    if state.get("approved"):
+        require_bound_worktree(root, state)
     sha = args.git_sha or current_git_sha(root)
     if args.record_type == "requirement":
         if args.status not in REQUIREMENT_STATUSES:
@@ -979,12 +1076,72 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     return {"ok": True, "message": f"Recorded {args.record_type}", "state": state}
 
 
+def environment_fingerprint(root: Path) -> dict[str, Any]:
+    lockfiles: dict[str, str] = {}
+    for name in LOCKFILE_NAMES:
+        path = root / name
+        if path.is_file():
+            lockfiles[name] = file_hash(path)
+    return {
+        "os": platform.system(),
+        "os_release": platform.release(),
+        "architecture": platform.machine(),
+        "python": platform.python_version(),
+        "lockfiles": lockfiles,
+    }
+
+
+def execute_verifier(command: str, root: Path, timeout: int) -> dict[str, Any]:
+    started = time.monotonic()
+    process = subprocess.Popen(
+        command,
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True,
+        executable="/bin/sh",
+        start_new_session=True,
+    )
+    timed_out = False
+    termination = None
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        returncode = process.returncode
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        returncode = 124
+        termination = "SIGTERM"
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            stdout, stderr = process.communicate(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            termination = "SIGKILL"
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = process.communicate()
+    output = "\n".join(part for part in (stdout, stderr) if part).strip()
+    return {
+        "returncode": returncode,
+        "output": output,
+        "timed_out": timed_out,
+        "termination": termination,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
 def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot verify immutable goal {state['status']}")
     if not state.get("approved"):
         raise GoalFlowError("Check commands cannot run before explicit design approval")
+    require_bound_worktree(root, state)
     check = state.get("checks", {}).get(args.id)
     if not check:
         raise GoalFlowError(f"Unknown check: {args.id}")
@@ -999,31 +1156,15 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if sha == "UNBORN":
         raise GoalFlowError("Verification requires an existing Git commit")
     timeout = int(check.get("timeout") or 300)
-    timed_out = False
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            text=True,
-            capture_output=True,
-            shell=True,
-            executable="/bin/sh",
-            timeout=timeout,
-            check=False,
-        )
-        returncode = completed.returncode
-        output = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
-    except subprocess.TimeoutExpired as exc:
-        timed_out = True
-        returncode = 124
-        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
-        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
-        output = "\n".join(part for part in (stdout, stderr) if part).strip()
+    execution = execute_verifier(command, root, timeout)
+    returncode = execution["returncode"]
+    output = execution["output"]
     clean_after = product_tree_is_clean(root)
     status = "PASS" if returncode == 0 and clean_after else "FAIL"
     summary_parts = [f"exit={returncode}"]
-    if timed_out:
+    if execution["timed_out"]:
         summary_parts.append(f"timed out after {timeout}s")
+        summary_parts.append(f"terminated with {execution['termination']}")
     if not clean_after:
         summary_parts.append("command changed the product tree")
     if output:
@@ -1034,6 +1175,10 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "summary": summary,
         "output_digest": hashlib.sha256(output.encode()).hexdigest(),
         "git_sha": sha,
+        "duration_ms": execution["duration_ms"],
+        "timed_out": execution["timed_out"],
+        "termination": execution["termination"],
+        "environment": environment_fingerprint(root),
         "updated_at": now(),
     })
     state["last_verified_commit"] = sha
@@ -1046,6 +1191,9 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "exit code": returncode,
         "summary": summary,
         "output digest": check["output_digest"],
+        "duration ms": check["duration_ms"],
+        "termination": check["termination"],
+        "environment": json.dumps(check["environment"], sort_keys=True),
         "Git SHA": sha,
     })
     return {
@@ -1055,6 +1203,10 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "status": status,
         "git_sha": sha,
         "summary": summary,
+        "duration_ms": check["duration_ms"],
+        "timed_out": check["timed_out"],
+        "termination": check["termination"],
+        "environment": check["environment"],
         "state": state,
     }
 
@@ -1063,6 +1215,8 @@ def cmd_update(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot update immutable goal {state['status']}")
+    if state.get("approved"):
+        require_bound_worktree(root, state)
     if args.status and args.status not in EDITABLE_STATUSES:
         raise GoalFlowError(f"Use a dedicated command for status {args.status}")
     if args.status:
@@ -1120,6 +1274,8 @@ def cmd_resume(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] not in {"PAUSED", "WAITING_INPUT", "WAITING_AUTHORIZATION", "BLOCKED"}:
         raise GoalFlowError(f"Cannot resume from {state['status']}")
+    if state.get("approved"):
+        require_bound_worktree(root, state)
     target = state.get("resume_status") or ("EXECUTING" if state.get("approved") else "PLANNING")
     state.update({"status": target, "wait_reason": None, "resume_status": None, "stop_repeat_count": 0})
     save_state(directory, state)
@@ -1150,6 +1306,8 @@ def cmd_cancel(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
+    if state.get("approved") and (args.apply or args.stop_event):
+        require_bound_worktree(root, state)
     result = evaluate_gate(root, directory, state)
     if args.stop_event and result["gate"] == "CONTINUE":
         fingerprint = state_fingerprint(root, state)
@@ -1184,6 +1342,7 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 def cmd_accept(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     goal_id, directory, state = load_state(root, args.goal_id)
+    require_bound_worktree(root, state)
     if state["status"] != "READY_FOR_ACCEPTANCE":
         raise GoalFlowError("Only a goal ready for acceptance can be accepted")
     gate = evaluate_gate(root, directory, state)
@@ -1206,6 +1365,7 @@ def cmd_accept(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 def cmd_reject(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
+    require_bound_worktree(root, state)
     if state["status"] != "READY_FOR_ACCEPTANCE":
         raise GoalFlowError("Only a goal ready for acceptance can be rejected")
     state.update({"status": "EXECUTING", "next_action": args.reason, "wait_reason": None})
@@ -1231,6 +1391,9 @@ def build_parser() -> argparse.ArgumentParser:
     summary = sub.add_parser("summary")
     summary.add_argument("--goal-id")
     summary.add_argument("--json", action="store_true")
+
+    bind_worktree = sub.add_parser("bind-worktree")
+    bind_worktree.add_argument("--goal-id")
 
     approve = sub.add_parser("approve")
     approve.add_argument("--goal-id")
@@ -1316,6 +1479,7 @@ COMMANDS = {
     "init": cmd_init,
     "status": cmd_status,
     "summary": cmd_summary,
+    "bind-worktree": cmd_bind_worktree,
     "plan-check": cmd_plan_check,
     "approve": cmd_approve,
     "record": cmd_record,
@@ -1337,7 +1501,11 @@ def main() -> int:
     args = parser.parse_args()
     root = find_root(args.root)
     try:
-        payload = COMMANDS[args.command](args, root)
+        read_only = args.command in {"status", "summary", "plan-check"}
+        if args.command == "gate":
+            read_only = not args.apply and not args.stop_event
+        with controller_lock(root, exclusive=not read_only):
+            payload = COMMANDS[args.command](args, root)
         if args.command == "summary" and not args.json:
             print(payload["text"])
         else:

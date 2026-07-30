@@ -117,6 +117,7 @@ class HookTests(unittest.TestCase):
                     "--rationale", f"{dimension} has no material impact in this isolated hook fixture",
                 )
         self.ctl("approve", "--user-approved", "--next-action", "Implement hook behavior")
+        self.ctl("bind-worktree")
         self.assertEqual(self.hook(STOP_HOOK)["decision"], "block")
         self.assertEqual(self.hook(STOP_HOOK)["decision"], "block")
         stopped = self.hook(STOP_HOOK)

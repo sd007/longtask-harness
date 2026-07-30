@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -114,6 +117,95 @@ class GoalCtlTests(unittest.TestCase):
         self.assertIn("Goal: Test Goal", result.stdout)
         self.assertNotIn('"active"', result.stdout)
 
+    def test_bind_worktree_requires_approval_and_rejects_wrong_branch(self) -> None:
+        denied = self.ctl("bind-worktree", expected=2)
+        self.assertIn("Approve", denied["error"])
+        self.register_and_approve()
+        binding = self.ctl("status")["state"]["worktree_binding"]
+        self.assertEqual(binding["branch"], self.git("branch", "--show-current"))
+        self.git("switch", "-c", "wrong-branch")
+        mismatch = self.ctl("update", "--next-action", "wrong branch", expected=2)
+        self.assertIn("binding mismatch", mismatch["error"])
+
+    def test_locked_concurrent_updates_increment_state_revision_without_loss(self) -> None:
+        self.register_and_approve()
+        before = self.ctl("status")["state"]
+        processes = [
+            subprocess.Popen(
+                [sys.executable, str(CLI), "--root", str(self.repo), "update", "--no-progress"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            for _ in range(4)
+        ]
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0, stderr + stdout)
+        after = self.ctl("status")["state"]
+        self.assertEqual(after["no_progress_count"], 4)
+        self.assertEqual(after["state_revision"], before["state_revision"] + 4)
+
+    def test_state_compare_and_swap_rejects_a_stale_writer(self) -> None:
+        spec = importlib.util.spec_from_file_location("goalctl_under_test", CLI)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _, directory, first = module.load_state(self.repo)
+        _, _, stale = module.load_state(self.repo)
+        first["next_action"] = "first writer"
+        module.save_state(directory, first)
+        stale["next_action"] = "stale writer"
+        with self.assertRaises(module.GoalFlowError):
+            module.save_state(directory, stale)
+
+    def test_verifier_receipt_contains_allowlisted_environment_fingerprint(self) -> None:
+        self.register_and_approve()
+        (self.repo / "feature.txt").write_text("done\n", encoding="utf-8")
+        (self.repo / "requirements.txt").write_text("example==1\n", encoding="utf-8")
+        self.git("add", "feature.txt", "requirements.txt")
+        self.git("commit", "-qm", "implement with lockfile")
+        payload = self.ctl("verify", "--id", "TEST")
+        environment = payload["environment"]
+        self.assertEqual(set(environment), {"os", "os_release", "architecture", "python", "lockfiles"})
+        self.assertIn("requirements.txt", environment["lockfiles"])
+        self.assertNotIn("PATH", json.dumps(environment))
+
+    def test_verifier_timeout_kills_descendant_process_group(self) -> None:
+        descriptor, pid_name = tempfile.mkstemp(prefix="goal-flow-child-")
+        os.close(descriptor)
+        pid_file = Path(pid_name)
+        command = (
+            "python3 -c 'import subprocess,time; "
+            "p=subprocess.Popen([\"python3\",\"-c\",\"import signal,time; "
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)\"]); "
+            f"open(\"{pid_file}\",\"w\").write(str(p.pid)); time.sleep(60)'"
+        )
+        try:
+            self.write_complete_goal(command)
+            self.ctl(
+                "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+                "--command", command, "--timeout", "1",
+            )
+            self.register_requirement()
+            self.register_dimensions()
+            self.ctl("approve", "--user-approved", "--next-action", "Run timeout fixture")
+            self.ctl("bind-worktree")
+            payload = self.ctl("verify", "--id", "TEST", expected=1)
+            self.assertTrue(payload["timed_out"])
+            self.assertEqual(payload["termination"], "SIGKILL")
+            child_pid = int(pid_file.read_text(encoding="utf-8"))
+            deadline = time.time() + 2
+            while time.time() < deadline:
+                try:
+                    os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail(f"descendant process {child_pid} survived verifier timeout")
+        finally:
+            pid_file.unlink(missing_ok=True)
+
     def write_complete_goal(self, check_command: str = "test -f feature.txt") -> None:
         goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
         dimension_lines = []
@@ -202,6 +294,7 @@ Required check TEST: {check_command}
     def register_and_approve(self, check_command: str = "test -f feature.txt") -> None:
         self.prepare_plan(check_command)
         self.ctl("approve", "--user-approved", "--next-action", "Implement feature")
+        self.ctl("bind-worktree")
 
     def commit_product(self, content: str = "done\n") -> str:
         (self.repo / "feature.txt").write_text(content, encoding="utf-8")
