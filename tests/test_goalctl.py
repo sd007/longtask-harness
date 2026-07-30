@@ -70,6 +70,30 @@ class GoalCtlTests(unittest.TestCase):
         state_path.write_text(json.dumps(state), encoding="utf-8")
         self.assertEqual(self.ctl("status")["state"]["profile"], "strict")
 
+    def test_classify_recommends_smallest_harness_for_task_shape(self) -> None:
+        micro = self.ctl("classify", "--goal", "Fix one typo")
+        self.assertEqual(micro["mode"], "micro")
+        standard = self.ctl(
+            "classify", "--goal", "Add a user-visible feature", "--behavior-change",
+            "--files", "3", "--steps", "3", "--task-type", "feature",
+        )
+        self.assertEqual(standard["mode"], "standard")
+        long_task = self.ctl(
+            "classify", "--goal", "Migrate tenant data", "--task-type", "migration",
+            "--risk-level", "high", "--cross-session",
+        )
+        self.assertEqual(long_task["mode"], "goal-flow")
+        self.assertEqual(long_task["profile"], "strict")
+
+    def test_project_context_is_scaffolded_and_readable(self) -> None:
+        context_path = self.repo / ".goal-flow" / "context.md"
+        self.assertTrue(context_path.exists())
+        loaded = self.ctl("context")
+        self.assertTrue(loaded["exists"])
+        self.assertIn("Goal Flow project context", loaded["excerpt"])
+        existing = self.ctl("context", "--init")
+        self.assertFalse(existing["created"])
+
     def test_behavior_change_scaffolds_harness_delta_and_tasks(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
         initialized = self.ctl(
@@ -547,6 +571,12 @@ Required check TEST: {check_command}
         self.assertIn("duration_ms", verify_event)
         self.assertNotIn("summary", verify_event)
         self.assertEqual(self.ctl("gate")["gate"], "CONTINUE")
+
+    def test_failed_check_exposes_classification_and_next_strategy(self) -> None:
+        self.register_and_approve(check_command="python3 -c 'raise AssertionError(\"bad behavior\")'")
+        executed = self.ctl("verify", "--id", "TEST", expected=1)
+        self.assertEqual(executed["failure_class"], "implementation_defect")
+        self.assertIn("失败断言", executed["recommended_action"])
 
     def test_check_command_cannot_run_before_approval(self) -> None:
         self.ctl(

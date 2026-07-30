@@ -1,4 +1,4 @@
 interface:
   display_name: "Goal Flow"
-  short_description: "Choose the right harness for software tasks"
-  default_prompt: "Use $goal-flow to choose a task-sized harness, plan, execute, verify, and deliver this software task reliably."
+  short_description: "Classify tasks and choose a safe harness"
+  default_prompt: "Use $goal-flow to classify this task, choose the smallest safe harness, plan, execute, verify, and deliver it reliably."

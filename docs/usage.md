@@ -6,6 +6,15 @@
 
 所有非琐碎任务默认先建立轻量计划，再按任务规模选择 Harness。单文件小修使用 `micro`，一般多步骤任务使用 `standard`，跨会话、容易漂移或失败代价较高的任务升级为完整 `goal-flow`；安全、迁移、生产可靠性和不可逆操作额外使用 `strict` profile。
 
+需要显式判断时，可以运行：
+
+```bash
+python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project classify \
+  --goal "增加租户级限流" --task-type feature --files 5 --steps 4 --behavior-change
+```
+
+项目级约定保存在 `.goal-flow/context.md`，只记录技术栈、测试命令、提交约定和安全边界，不存放秘密或可执行指令。验证失败时，`verify` 会返回失败类别和下一策略；先按类别处理，避免无证据重复重试。
+
 在目标 Git 仓库中开启新的 Codex 任务：
 
 ```text
@@ -50,6 +59,7 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project summary
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project report
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project review
+python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project context
 ```
 
 `summary` 适合日常查看和 SessionStart 恢复；恢复时先使用摘要和 `report --json`，只有缺少细节或诊断失败时才读取完整 `state.json`、`evidence.md`，避免每轮重复消耗整个审计历史。文本 `report` 适合最终复盘，包含最小时间线、验证尝试/失败、需求与检查覆盖、残余风险；旧目标没有 `events.jsonl` 时仍可读取。

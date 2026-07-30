@@ -232,7 +232,7 @@ class ApprovalServer:
             self.response(request_id, {
                 "protocolVersion": request.get("params", {}).get("protocolVersion", "2024-11-05"),
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "goal-flow-approval", "version": "0.5.0"},
+                "serverInfo": {"name": "goal-flow-approval", "version": "0.6.0"},
             })
         elif method == "notifications/initialized":
             return

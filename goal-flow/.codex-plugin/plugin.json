@@ -1,6 +1,6 @@
 {
   "name": "goal-flow",
-  "version": "0.5.0+codex.20260730081311",
+  "version": "0.6.0+codex.20260730083000",
   "description": "Plan, execute, verify, and deliver long software tasks with evidence-backed gates.",
   "author": {
     "name": "Local developer"
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Goal Flow",
-    "shortDescription": "Adaptive task harnesses with native approvals",
-    "longDescription": "A lightweight Codex-native workflow that chooses a task-sized harness, tracks behavior changes with scenarios and deltas, executes with evidence-backed gates, and provides native approvals for long or high-risk work.",
+    "shortDescription": "Adaptive task harnesses with recovery guidance",
+    "longDescription": "A lightweight Codex-native workflow that classifies task shape and risk, chooses a task-sized harness, tracks behavior changes, restores compact project context, and provides evidence-backed recovery guidance and approvals.",
     "developerName": "Local developer",
     "category": "Productivity",
     "brandColor": "#4F46E5",
@@ -23,6 +23,6 @@
       "Recover",
       "Interactive approval"
     ],
-    "defaultPrompt": "Use $goal-flow to choose a task-sized harness, plan, execute, verify, and deliver this software task reliably."
+    "defaultPrompt": "Use $goal-flow to classify this task, choose the smallest safe harness, plan, execute, verify, and deliver it reliably."
   }
 }

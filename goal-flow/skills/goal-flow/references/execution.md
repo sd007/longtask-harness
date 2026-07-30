@@ -48,4 +48,4 @@ Classify failures before changing code:
 - flaky verifier
 - missing permission or external input
 
-Record the observation, changed hypothesis, and next strategy. Block rather than thrash when no new evidence is available.
+Record the observation, changed hypothesis, and next strategy. `goalctl verify` provides a deterministic first classification and recommended action; treat it as a triage hint, then confirm against the actual output. Block rather than thrash when no new evidence is available. Upgrade the Harness or run `replan` when the failure changes the risk, scope, or authorization boundary.

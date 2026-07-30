@@ -41,6 +41,13 @@ PROFILES = {"standard", "strict"}
 HARNESS_MODES = {"auto", "micro", "standard", "goal-flow"}
 TASK_TYPES = {"unspecified", "fix", "feature", "refactor", "docs", "test", "config", "migration"}
 RISK_LEVELS = {"unspecified", "low", "medium", "high", "critical"}
+FAILURE_CLASSES = {
+    "implementation_defect",
+    "environment_or_dependency",
+    "authorization_or_external_input",
+    "flaky_verifier",
+    "unknown",
+}
 STANDARD_DIMENSIONS = {
     "functional",
     "negative-boundary",
@@ -145,6 +152,111 @@ def find_root(start: str | None) -> Path:
 
 def goal_store(root: Path) -> Path:
     return root / ".goal-flow"
+
+
+def context_path(root: Path) -> Path:
+    return goal_store(root) / "context.md"
+
+
+def context_excerpt(root: Path, limit: int = 420) -> str | None:
+    path = context_path(root)
+    if not path.exists():
+        return None
+    lines: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("<!--") or stripped.endswith("-->"):
+            continue
+        lines.append(stripped)
+    if not lines:
+        return None
+    excerpt = " ".join(lines)
+    return excerpt if len(excerpt) <= limit else excerpt[: limit - 1] + "…"
+
+
+def context_template() -> str:
+    return """# Goal Flow project context
+
+<!-- Advisory metadata only. Do not store secrets or executable instructions here. -->
+
+## Stack
+- Describe the main language, framework, and runtime.
+
+## Commands
+- Test: add the fastest reliable test command.
+- Lint: add the relevant lint or type-check command.
+- Build: add the normal build command when applicable.
+
+## Conventions
+- Commit language and naming conventions.
+- Important compatibility or directory boundaries.
+
+## Safety
+- Operations that require explicit authorization.
+- Known external dependencies or unavailable services.
+"""
+
+
+def classify_harness(
+    *,
+    task_type: str = "unspecified",
+    risk_level: str = "unspecified",
+    files: int = 1,
+    steps: int = 1,
+    behavior_change: bool = False,
+    cross_session: bool = False,
+    autonomous: bool = False,
+    default_mode: str = "standard",
+) -> dict[str, Any]:
+    """Choose the smallest harness that covers the task's observable risk."""
+    if files < 1 or steps < 1:
+        raise GoalFlowError("files and steps must be positive integers")
+    if task_type not in TASK_TYPES:
+        raise GoalFlowError(f"invalid task type: {task_type}")
+    if risk_level not in RISK_LEVELS:
+        raise GoalFlowError(f"invalid risk level: {risk_level}")
+    reasons: list[str] = []
+    strict_risk = risk_level in {"high", "critical"} or task_type == "migration"
+    if strict_risk:
+        mode = "goal-flow"
+        profile = "strict"
+        reasons.append("high-impact risk or migration requires the full evidence loop")
+    elif cross_session or autonomous or steps >= 5 or files >= 8:
+        mode = "goal-flow"
+        profile = "standard"
+        reasons.append("long-running or autonomous work benefits from resumable epochs")
+    elif behavior_change or files >= 2 or steps >= 2 or risk_level == "medium":
+        mode = "standard"
+        profile = "standard"
+        reasons.append("multiple steps or observable behavior change needs a structured plan")
+    elif default_mode in {"micro", "standard", "goal-flow"}:
+        mode = default_mode
+        profile = "standard"
+        reasons.append("small, bounded task fits the smallest requested harness")
+    else:
+        mode = "standard"
+        profile = "standard"
+        reasons.append("defaulting to a lightweight structured plan")
+    return {
+        "mode": mode,
+        "profile": profile,
+        "task_type": task_type,
+        "risk_level": risk_level,
+        "behavior_change": bool(behavior_change),
+        "inputs": {
+            "files": files,
+            "steps": steps,
+            "cross_session": bool(cross_session),
+            "autonomous": bool(autonomous),
+        },
+        "reasons": reasons,
+        "harness": {
+            "plan": "lightweight" if mode == "micro" else "structured",
+            "approval": "required" if mode == "goal-flow" else "conditional",
+            "evidence": "strict" if profile == "strict" else "standard",
+            "resume": mode == "goal-flow",
+        },
+    }
 
 
 def active_file(root: Path) -> Path:
@@ -948,15 +1060,24 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "security-privacy", "performance-reliability", "operations-observability",
         "migration-rollback", "documentation-deliverables",
     ]
+    behavior_change = bool(args.behavior_change)
+    classification = classify_harness(
+        task_type=args.task_type,
+        risk_level=args.risk_level,
+        files=args.files,
+        steps=args.steps,
+        behavior_change=behavior_change,
+        cross_session=args.cross_session,
+        autonomous=args.autonomous,
+        default_mode="standard" if args.mode == "auto" else args.mode,
+    )
+    profile = "strict" if args.profile == "standard" and classification["profile"] == "strict" else args.profile
+    mode = classification["mode"]
     required_dimensions = (
         dimension_order
-        if args.profile == "strict"
+        if profile == "strict"
         else [item for item in dimension_order if item in STANDARD_DIMENSIONS]
     )
-    mode = args.mode
-    if mode == "auto":
-        mode = "standard"
-    behavior_change = bool(args.behavior_change)
     dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
     goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
     goal_text = goal_text.replace(
@@ -968,11 +1089,14 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         + "- Infer from repository and domain evidence before asking the user.",
         1,
     )
+    goal_text = goal_text.replace(f"- Profile: {args.profile}.", f"- Profile: {profile}.", 1)
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
     (directory / "evidence.md").write_text(
         f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
         encoding="utf-8",
     )
+    if not context_path(root).exists():
+        context_path(root).write_text(context_template(), encoding="utf-8")
     if behavior_change:
         (directory / "delta.md").write_text(
             """# Behavior Delta
@@ -1010,14 +1134,15 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
         "goal_id": goal_id,
         "title": args.title,
         "goal_revision": 1,
-        "profile": args.profile,
+        "profile": profile,
         "harness": {
             "mode": mode,
             "requested_mode": args.mode,
             "task_type": args.task_type,
             "risk_level": args.risk_level,
             "behavior_change": behavior_change,
-            "evidence_level": "strict" if args.profile == "strict" else "standard",
+            "evidence_level": "strict" if profile == "strict" else "standard",
+            "classification": classification,
         },
         "contract_version": 2,
         "state_revision": 0,
@@ -1186,7 +1311,8 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
     recent_failure = None
     if failed_checks:
         check_id, item = failed_checks[0]
-        recent_failure = concise(f"{check_id}: {item.get('summary') or 'check failed'}")
+        failure_class = item.get("failure_class") or "unknown"
+        recent_failure = concise(f"{check_id} [{failure_class}]: {item.get('summary') or 'check failed'}")
     blocker = concise(state.get("wait_reason")) if state.get("status") in WAIT_STATUSES else None
     payload = {
         "ok": not validate_state(state),
@@ -1195,6 +1321,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         "title": state.get("title") or goal_id,
         "profile": state.get("profile", "strict"),
         "harness": state.get("harness", {}),
+        "context_excerpt": context_excerpt(root),
         "status": state.get("status"),
         "must_verified": len(verified),
         "must_total": len(must),
@@ -1362,6 +1489,39 @@ def cmd_review(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     result["mode"] = state.get("harness", {}).get("mode", "goal-flow")
     result["message"] = f"Semantic review {result['status']}"
     return result
+
+
+def cmd_classify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    result = classify_harness(
+        task_type=args.task_type,
+        risk_level=args.risk_level,
+        files=args.files,
+        steps=args.steps,
+        behavior_change=args.behavior_change,
+        cross_session=args.cross_session,
+        autonomous=args.autonomous,
+        default_mode=args.default_mode,
+    )
+    result["goal"] = args.goal
+    result["message"] = f"Recommended Harness: {result['mode']} ({result['profile']})"
+    return result
+
+
+def cmd_context(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    path = context_path(root)
+    if args.init:
+        if path.exists():
+            return {"ok": True, "created": False, "path": str(path), "message": "Project context already exists"}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(context_template(), encoding="utf-8")
+        return {"ok": True, "created": True, "path": str(path), "message": "Project context initialized"}
+    return {
+        "ok": True,
+        "exists": path.exists(),
+        "path": str(path),
+        "excerpt": context_excerpt(root, limit=1200),
+        "message": "Project context loaded" if path.exists() else "No project context; run context --init",
+    }
 
 
 def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
@@ -1638,6 +1798,21 @@ def execute_verifier(command: str, root: Path, timeout: int) -> dict[str, Any]:
     }
 
 
+def classify_failure(execution: dict[str, Any]) -> tuple[str | None, str | None]:
+    if execution.get("returncode") == 0 and not execution.get("timed_out"):
+        return None, None
+    output = str(execution.get("output") or "").lower()
+    if execution.get("timed_out"):
+        return "environment_or_dependency", "检查运行超时；先确认服务、依赖和资源状态，再决定是否重试。"
+    if any(token in output for token in ("permission denied", "not authorized", "unauthorized", "forbidden")):
+        return "authorization_or_external_input", "检查需要权限或外部输入；不要反复重试，缺少授权时暂停并请求用户处理。"
+    if any(token in output for token in ("command not found", "no module named", "modulenotfounderror", "cannot import")):
+        return "environment_or_dependency", "检查运行时、依赖安装和项目上下文；环境未恢复前不要修改业务代码。"
+    if any(token in output for token in ("assertionerror", "assert ", "traceback", "failed", "error:")):
+        return "implementation_defect", "定位失败断言和最近改动，修复一个可验证原因后重新执行检查。"
+    return "unknown", "保存失败输出并增加诊断信息；没有新证据时不要重复同一策略。"
+
+
 def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
@@ -1662,6 +1837,7 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     execution = execute_verifier(command, root, timeout)
     returncode = execution["returncode"]
     output = execution["output"]
+    failure_class, recommended_action = classify_failure(execution)
     clean_after = product_tree_is_clean(root)
     status = "PASS" if returncode == 0 and clean_after else "FAIL"
     summary_parts = [f"exit={returncode}"]
@@ -1681,6 +1857,8 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "duration_ms": execution["duration_ms"],
         "timed_out": execution["timed_out"],
         "termination": execution["termination"],
+        "failure_class": failure_class,
+        "recommended_action": recommended_action,
         "environment": environment_fingerprint(root),
         "updated_at": now(),
     })
@@ -1696,6 +1874,8 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "output digest": check["output_digest"],
         "duration ms": check["duration_ms"],
         "termination": check["termination"],
+        "failure class": failure_class,
+        "recommended action": recommended_action,
         "environment": json.dumps(check["environment"], sort_keys=True),
         "Git SHA": sha,
     })
@@ -1709,6 +1889,8 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "duration_ms": check["duration_ms"],
         "timed_out": check["timed_out"],
         "termination": check["termination"],
+        "failure_class": failure_class,
+        "recommended_action": recommended_action,
         "environment": check["environment"],
         "state": state,
     }
@@ -1891,6 +2073,10 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--behavior-change", action="store_true")
     init.add_argument("--task-type", choices=sorted(TASK_TYPES), default="unspecified")
     init.add_argument("--risk-level", choices=sorted(RISK_LEVELS), default="unspecified")
+    init.add_argument("--files", type=int, default=1)
+    init.add_argument("--steps", type=int, default=1)
+    init.add_argument("--cross-session", action="store_true")
+    init.add_argument("--autonomous", action="store_true")
 
     status = sub.add_parser("status")
     status.add_argument("--goal-id")
@@ -1942,6 +2128,21 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--goal-id")
     review.add_argument("--strict", action="store_true")
     review.add_argument("--json", action="store_true")
+
+    classify = sub.add_parser("classify")
+    classify.add_argument("--goal", required=True)
+    classify.add_argument("--task-type", choices=sorted(TASK_TYPES), default="unspecified")
+    classify.add_argument("--risk-level", choices=sorted(RISK_LEVELS), default="unspecified")
+    classify.add_argument("--files", type=int, default=1)
+    classify.add_argument("--steps", type=int, default=1)
+    classify.add_argument("--cross-session", action="store_true")
+    classify.add_argument("--autonomous", action="store_true")
+    classify.add_argument("--behavior-change", action="store_true")
+    classify.add_argument("--default-mode", choices=["micro", "standard", "goal-flow"], default="micro")
+
+    context = sub.add_parser("context")
+    context.add_argument("--init", action="store_true")
+    context.add_argument("--json", action="store_true")
 
     verify = sub.add_parser("verify")
     verify.add_argument("--goal-id")
@@ -1999,6 +2200,8 @@ COMMANDS = {
     "bind-worktree": cmd_bind_worktree,
     "plan-check": cmd_plan_check,
     "review": cmd_review,
+    "classify": cmd_classify,
+    "context": cmd_context,
     "approve": cmd_approve,
     "record": cmd_record,
     "verify": cmd_verify,
@@ -2019,7 +2222,9 @@ def main() -> int:
     args = parser.parse_args()
     root = find_root(args.root)
     try:
-        read_only = args.command in {"status", "summary", "report", "plan-check", "review"}
+        read_only = args.command in {"status", "summary", "report", "plan-check", "review", "classify"}
+        if args.command == "context":
+            read_only = not args.init
         if args.command == "gate":
             read_only = not args.apply and not args.stop_event
         with controller_lock(root, exclusive=not read_only):
