@@ -78,6 +78,10 @@ LOCKFILE_NAMES = (
     "go.sum", "package-lock.json", "pnpm-lock.yaml", "poetry.lock",
     "requirements.txt", "uv.lock", "yarn.lock",
 )
+EVENT_FIELDS = {
+    "time", "event", "status", "revision", "milestone", "check",
+    "result", "duration_ms", "git_sha", "reason",
+}
 
 
 class GoalFlowError(RuntimeError):
@@ -783,6 +787,88 @@ def concise(value: Any, limit: int = 240) -> str | None:
     return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
 
 
+def append_event(directory: Path, event: dict[str, Any]) -> None:
+    """Append one deliberately small, non-sensitive event under the controller lock."""
+    unknown = set(event) - EVENT_FIELDS
+    if unknown:
+        raise GoalFlowError(f"Event contains unsupported fields: {', '.join(sorted(unknown))}")
+    payload = {key: value for key, value in event.items() if value is not None}
+    path = directory / "events.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def read_events(directory: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    path = directory / "events.jsonl"
+    if not path.exists():
+        return [], []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    events: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for index, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            if index == len(lines):
+                warnings.append(f"Ignored incomplete final event line {index}")
+                continue
+            raise GoalFlowError(f"Invalid event JSON at line {index}: {exc}") from exc
+        if not isinstance(item, dict):
+            raise GoalFlowError(f"Event line {index} is not a JSON object")
+        unknown = set(item) - EVENT_FIELDS
+        if unknown:
+            warnings.append(
+                f"Ignored unsupported fields on event line {index}: {', '.join(sorted(unknown))}"
+            )
+        events.append({key: item[key] for key in EVENT_FIELDS if key in item})
+    return events, warnings
+
+
+def append_command_event(
+    root: Path, args: argparse.Namespace, payload: dict[str, Any]
+) -> None:
+    state = payload.get("state")
+    if not isinstance(state, dict):
+        explicit = payload.get("goal_id") or getattr(args, "goal_id", None)
+        try:
+            _, _, state = load_state(root, explicit)
+        except GoalFlowError:
+            return
+    goal_id = state.get("goal_id")
+    if not goal_id:
+        return
+    event_name = args.command.replace("-", "_")
+    if args.command == "record":
+        event_name = f"record_{args.record_type}"
+    result = None
+    reason = None
+    if args.command == "verify":
+        result = payload.get("status")
+        if payload.get("timed_out"):
+            reason = "verifier timed out"
+        elif result == "FAIL":
+            reason = "verifier failed"
+    elif args.command == "gate":
+        result = payload.get("gate")
+    event = {
+        "time": now(),
+        "event": event_name,
+        "status": state.get("status"),
+        "revision": state.get("state_revision"),
+        "milestone": state.get("current_milestone"),
+        "check": payload.get("check_id"),
+        "result": result,
+        "duration_ms": payload.get("duration_ms"),
+        "git_sha": payload.get("git_sha") or current_git_sha(root),
+        "reason": reason,
+    }
+    append_event(goal_dir(root, str(goal_id)), event)
+
+
 def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, Any]:
     must = [
         item for item in state.get("requirements", {}).values()
@@ -853,6 +939,116 @@ def cmd_summary(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             }
     goal_id, _, state = load_state(root, args.goal_id)
     return build_summary(root, goal_id, state)
+
+
+def build_report(
+    root: Path, goal_id: str, directory: Path, state: dict[str, Any]
+) -> dict[str, Any]:
+    sha = current_git_sha(root)
+    events, warnings = read_events(directory)
+    metrics = assurance_payload(root, state, sha)
+    requirements = [
+        {
+            "id": requirement_id,
+            "kind": item.get("kind"),
+            "status": item.get("status"),
+            "fresh": evidence_is_fresh(root, item.get("git_sha")),
+        }
+        for requirement_id, item in sorted(state.get("requirements", {}).items())
+    ]
+    checks = [
+        {
+            "id": check_id,
+            "required": bool(item.get("required")),
+            "status": item.get("status"),
+            "fresh": evidence_is_fresh(root, item.get("git_sha")),
+            "duration_ms": item.get("duration_ms"),
+            "timed_out": bool(item.get("timed_out")),
+            "termination": item.get("termination"),
+            "git_sha": item.get("git_sha"),
+        }
+        for check_id, item in sorted(state.get("checks", {}).items())
+    ]
+    risks = [
+        {
+            "id": risk_id,
+            "status": item.get("status"),
+            "severity": item.get("severity"),
+        }
+        for risk_id, item in sorted(state.get("risks", {}).items())
+    ]
+    attempts = sum(item.get("event") == "verify" for item in events)
+    failures = sum(
+        item.get("event") == "verify" and item.get("result") == "FAIL"
+        for item in events
+    )
+    payload = {
+        "ok": not validate_state(state),
+        "active": active_goal_id(root) == goal_id if active_file(root).exists() else False,
+        "goal_id": goal_id,
+        "title": state.get("title") or goal_id,
+        "profile": state.get("profile", "strict"),
+        "status": state.get("status"),
+        "git_sha": sha,
+        "milestone": state.get("current_milestone"),
+        "assurance": metrics,
+        "attempts": attempts,
+        "failures": failures,
+        "requirements": requirements,
+        "checks": checks,
+        "risks": risks,
+        "events": events,
+        "warnings": warnings,
+    }
+    lines = [
+        f"# Goal Flow report — {payload['title']}",
+        "",
+        f"- Goal: {goal_id}",
+        f"- Profile: {payload['profile']}",
+        f"- Status: {payload['status']}",
+        f"- Git: {sha}",
+        f"- Milestone: {payload['milestone'] or '-'}",
+        "",
+        "## Coverage",
+        "",
+        f"- MUST requirements: {metrics['must_verified_on_current_sha']}/{metrics['must_total']}",
+        f"- Required checks: {metrics['required_check_coverage']}%",
+        f"- Verification attempts/failures: {attempts}/{failures}",
+        f"- Open risks: {metrics['open_risks']} ({metrics['open_high_or_critical_risks']} high/critical)",
+        f"- Assurance: {metrics['assurance']} ({metrics['confidence']})",
+        "",
+        "## Timeline",
+        "",
+    ]
+    if events:
+        for item in events:
+            detail = ""
+            if item.get("check"):
+                detail += f" {item['check']}"
+            if item.get("result"):
+                detail += f" → {item['result']}"
+            lines.append(f"- {item.get('time', '-')} · {item.get('event', 'unknown')}{detail}")
+    else:
+        lines.append("- No event history is available for this goal.")
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        lines.extend(f"- {warning}" for warning in warnings)
+    payload["text"] = "\n".join(lines)
+    return payload
+
+
+def cmd_report(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    if not args.goal_id:
+        path = active_file(root)
+        if not path.exists() or not load_json(path).get("goal_id"):
+            return {
+                "ok": True,
+                "active": False,
+                "message": "No active Goal Flow goal",
+                "text": "No active Goal Flow goal.",
+            }
+    goal_id, directory, state = load_state(root, args.goal_id)
+    return build_report(root, goal_id, directory, state)
 
 
 def cmd_plan_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
@@ -1392,6 +1588,10 @@ def build_parser() -> argparse.ArgumentParser:
     summary.add_argument("--goal-id")
     summary.add_argument("--json", action="store_true")
 
+    report = sub.add_parser("report")
+    report.add_argument("--goal-id")
+    report.add_argument("--json", action="store_true")
+
     bind_worktree = sub.add_parser("bind-worktree")
     bind_worktree.add_argument("--goal-id")
 
@@ -1479,6 +1679,7 @@ COMMANDS = {
     "init": cmd_init,
     "status": cmd_status,
     "summary": cmd_summary,
+    "report": cmd_report,
     "bind-worktree": cmd_bind_worktree,
     "plan-check": cmd_plan_check,
     "approve": cmd_approve,
@@ -1501,12 +1702,14 @@ def main() -> int:
     args = parser.parse_args()
     root = find_root(args.root)
     try:
-        read_only = args.command in {"status", "summary", "plan-check"}
+        read_only = args.command in {"status", "summary", "report", "plan-check"}
         if args.command == "gate":
             read_only = not args.apply and not args.stop_event
         with controller_lock(root, exclusive=not read_only):
             payload = COMMANDS[args.command](args, root)
-        if args.command == "summary" and not args.json:
+            if not read_only:
+                append_command_event(root, args, payload)
+        if args.command in {"summary", "report"} and not args.json:
             print(payload["text"])
         else:
             emit(payload, True)

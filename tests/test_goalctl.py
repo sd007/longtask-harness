@@ -143,6 +143,41 @@ class GoalCtlTests(unittest.TestCase):
         after = self.ctl("status")["state"]
         self.assertEqual(after["no_progress_count"], 4)
         self.assertEqual(after["state_revision"], before["state_revision"] + 4)
+        events_path = self.repo / ".goal-flow" / "test-goal" / "events.jsonl"
+        events = [json.loads(line) for line in events_path.read_text().splitlines()]
+        self.assertEqual(sum(item["event"] == "update" for item in events), 4)
+
+    def test_events_are_minimal_and_report_tolerates_an_incomplete_tail(self) -> None:
+        secret = "SECRET-user-supplied-next-action"
+        self.ctl("update", "--next-action", secret)
+        events_path = self.repo / ".goal-flow" / "test-goal" / "events.jsonl"
+        raw_events = events_path.read_text(encoding="utf-8")
+        events = [json.loads(line) for line in raw_events.splitlines()]
+        allowed = {
+            "time", "event", "status", "revision", "milestone", "check",
+            "result", "duration_ms", "git_sha", "reason",
+        }
+        self.assertTrue(events)
+        self.assertTrue(all(set(item) <= allowed for item in events))
+        self.assertNotIn(secret, raw_events)
+
+        report = self.ctl("report", "--json")
+        self.assertEqual(report["goal_id"], "test-goal")
+        self.assertIn("assurance", report)
+        self.assertIn("Timeline", report["text"])
+
+        with events_path.open("a", encoding="utf-8") as handle:
+            handle.write('{"time":"unfinished"')
+        recovered = self.ctl("report", "--json")
+        self.assertTrue(recovered["warnings"])
+        self.assertIn("incomplete final event", recovered["warnings"][0])
+
+    def test_report_supports_legacy_goals_without_events(self) -> None:
+        events_path = self.repo / ".goal-flow" / "test-goal" / "events.jsonl"
+        events_path.unlink()
+        report = self.ctl("report", "--json")
+        self.assertEqual(report["events"], [])
+        self.assertIn("No event history", report["text"])
 
     def test_state_compare_and_swap_rejects_a_stale_writer(self) -> None:
         spec = importlib.util.spec_from_file_location("goalctl_under_test", CLI)
@@ -364,6 +399,17 @@ Required check TEST: {check_command}
         executed = self.ctl("verify", "--id", "TEST", expected=1)
         self.assertEqual(executed["status"], "FAIL")
         self.assertIn("exit=1", executed["summary"])
+        events = [
+            json.loads(line)
+            for line in (
+                self.repo / ".goal-flow" / "test-goal" / "events.jsonl"
+            ).read_text(encoding="utf-8").splitlines()
+        ]
+        verify_event = [item for item in events if item["event"] == "verify"][-1]
+        self.assertEqual(verify_event["check"], "TEST")
+        self.assertEqual(verify_event["result"], "FAIL")
+        self.assertIn("duration_ms", verify_event)
+        self.assertNotIn("summary", verify_event)
         self.assertEqual(self.ctl("gate")["gate"], "CONTINUE")
 
     def test_check_command_cannot_run_before_approval(self) -> None:

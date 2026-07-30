@@ -28,18 +28,23 @@ Include in `goal.md`:
 
 Never place secret values in `goal.md` or verifier commands. Refer to environment-variable names or credential mechanisms and request authorization only when execution actually needs them.
 
-## Assess every acceptance dimension
+## Assess the selected profile
 
-Record each dimension as `COVERED` with linked criterion IDs, or `N_A` with a substantive rationale:
+Use `standard` for normal day-to-day repository work and `strict` when security, migration, production reliability, irreversible actions, or similarly costly failure modes are material. Both profiles keep the same MUST evidence and approval gates.
+
+For `standard`, assess these four core dimensions. For `strict`, continue through the full list. Record each required dimension as `COVERED` with linked criterion IDs, or `N_A` with a substantive rationale:
 
 - `functional`
 - `negative-boundary`
 - `regression-compatibility`
+- `documentation-deliverables`
+
+Strict additionally requires:
+
 - `security-privacy`
 - `performance-reliability`
 - `operations-observability`
 - `migration-rollback`
-- `documentation-deliverables`
 
 `N_A` means evidence shows the dimension is immaterial, not that it was forgotten.
 

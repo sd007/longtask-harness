@@ -59,7 +59,7 @@ class InstallerTests(unittest.TestCase):
         installed_manifest = json.loads(
             (self.home / "plugins" / "goal-flow" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertTrue(installed_manifest["version"].startswith("0.2.0+codex.local-"))
+        self.assertTrue(installed_manifest["version"].startswith("0.3.0+codex.local-"))
         self.assertEqual([item["name"] for item in self.marketplace()["plugins"]], ["keep-me", "goal-flow"])
 
     def test_dry_run_changes_nothing(self) -> None:

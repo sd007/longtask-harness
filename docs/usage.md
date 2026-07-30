@@ -4,6 +4,8 @@
 
 普通用户不需要手动运行 `goalctl.py`。只需用自然语言启动任务、确认方案、处理真实阻塞并做最终验收。
 
+它适合跨多个实现步骤、可能跨会话恢复、验收条件容易漂移或失败代价较高的任务。一次性的小修、已有明确测试的一两个文件改动，直接工作通常更省 Token，不必启动 Goal Flow。日常任务先用 `standard`；只有漏检成本明显高于额外规划成本时才用 `strict`。
+
 在目标 Git 仓库中开启新的 Codex 任务：
 
 ```text
@@ -12,7 +14,7 @@
 
 Codex 首先自行调查仓库、既有规范、历史、相关领域知识和官方资料，并据此补全隐含目标。只有遇到无法从证据判断、会改变业务结果或授权边界的问题时才询问你，并给出推荐默认值。
 
-之后它会登记结构化验收标准、八类验收维度、标准到检查的映射和精确检查命令。每条 MUST 标准必须说明：可观察结果、证据能证明什么、负向或边界失败模式、依据来源和实际检查。`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。在你明确批准前，Codex 不能修改实现代码；批准会冻结方案、验收标准、质量维度判断和检查定义。
+默认使用 `standard` profile，登记功能、边界、兼容和文档交付四个核心验收维度；安全、迁移、生产可靠性或其他高风险任务使用 `strict`，登记全部八维。每条 MUST 标准都必须说明可观察结果、证据范围、失败模式、依据和实际检查。`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。在你明确批准前，Codex 不能修改实现代码；批准会冻结 profile、方案、验收标准、质量维度判断和检查定义。
 
 批准时建议说清楚版本，例如：
 
@@ -22,7 +24,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 ## 自动执行阶段
 
-批准后，Codex 以小型 epoch 循环工作：感知当前状态、选择最大的未满足验收标准、实施、提交实现、由控制器执行已批准检查、记录标准证据、提交审计记录、运行 Gate。检查回执包含真实退出码、输出摘要与哈希和被测试的 Git SHA；自由文本不能把检查标记为 PASS。
+批准后，Codex 在实现分支执行 `bind-worktree`，再以小型 epoch 循环工作：感知当前状态、选择最大的未满足验收标准、实施、提交实现、由控制器执行已批准检查、记录标准证据、提交审计记录、运行 Gate。绑定防止同一目标从错误仓库、worktree 或分支继续；检查回执包含真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
 
 日常只需要关注两类打断：
 
@@ -38,12 +40,17 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 - `goal.md`：批准的结果、边界、验收标准、质量维度、里程碑、验证器和风险；
 - `state.json`：机器可判定状态，只能由 `goalctl.py` 修改；
 - `evidence.md`：人可读证据、反证、风险和验收历史。
+- `events.jsonl`：只含白名单元数据的追加事件流，不含原始检查输出、prompt 或环境变量值。
 
 `.goal-flow/active.json` 指向当前目标。可以执行：
 
 ```bash
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project status
+python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project summary
+python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project report
 ```
+
+`summary` 适合日常查看和 SessionStart 恢复；`report --json` 适合工具消费，文本 `report` 适合最终复盘。报告包含最小时间线、验证尝试/失败、需求与检查覆盖、残余风险；旧目标没有 `events.jsonl` 时仍可读取。
 
 ## 暂停、恢复和变更方案
 

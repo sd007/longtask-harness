@@ -7,7 +7,7 @@ Goal Flow 是一个轻量、Codex 原生的长任务软件工程插件。它把�
 - 一个用户可调用的 `$goal-flow` Skill；
 - 一个无第三方依赖的 `goalctl.py` 状态与检查执行控制器；
 - `SessionStart` 与 `Stop` 两个 Codex Hooks；
-- 每个目标三份审计文件：`goal.md`、`state.json`、`evidence.md`。
+- 每个目标四份简单文件：`goal.md`、`state.json`、`evidence.md`、`events.jsonl`。
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,9 @@ flowchart LR
 
 ## 设计边界
 
-Goal Flow v0.2 聚焦单个 Codex、单个 Git 仓库、单个活动目标。方案阶段先由 Codex 基于证据补全目标，再用结构化验收标准和八类质量维度建立批准合同；实施与 Gate 始终追溯到该合同。它不会引入外部 Runner、MCP 服务、Agent 编排框架或复杂事件系统，也不会承诺虚假的“100% 正确”。在没有历史校准数据前，概率置信度固定显示为 `UNCALIBRATED`。
+Goal Flow v0.3 聚焦单个 Codex、单个 Git 仓库、单个活动目标。默认 `standard` profile 只要求功能、边界、兼容和交付物四个核心维度；高风险任务可显式选择 `strict`，检查全部八维。`summary` 用于低成本恢复上下文，`report` 从最小 `events.jsonl` 汇总覆盖率、验证尝试和残余风险。它不会引入外部 Runner、数据库、Web UI、Agent 编排框架或复杂事件系统，也不会承诺虚假的“100% 正确”。
+
+批准后用 `bind-worktree` 把目标绑定到规范化仓库、Git 目录和分支；文件锁与 revision CAS 防止并发写丢失。验证超时会清理整个进程组，并记录不含环境变量值的运行环境指纹。
 
 ## 快速开始
 
@@ -38,4 +40,4 @@ Goal Flow v0.2 聚焦单个 Codex、单个 Git 仓库、单个活动目标。方
 
 ## 项目状态
 
-当前版本是 `0.2.0`。它不是生产级形式化验证器；外部系统真实性、验收标准本身是否正确以及用户授权仍属于信任边界。
+当前版本是 `0.3.0`。它不是生产级形式化验证器；外部系统真实性、验收标准本身是否正确以及用户授权仍属于信任边界。

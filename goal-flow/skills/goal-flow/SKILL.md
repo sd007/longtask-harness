@@ -27,7 +27,7 @@ Do not edit `state.json` directly. Use the controller.
 
 1. Run `status`.
 2. If `active` is true, read its `goal.md`, `state.json`, `evidence.md`, and current Git state. Resume the recorded `next_action`.
-3. If `active` is false, run `init --goal-id <slug> --title <title> --goal <outcome>`.
+3. If `active` is false, run `init --goal-id <slug> --title <title> --goal <outcome>`. The default `standard` profile fits ordinary repository work; pass `--profile strict` for security, migration, production reliability, irreversible operations, or other high-risk work.
 4. Read [planning.md](references/planning.md) completely and conduct the design phase.
 
 ## Design before implementation
@@ -47,10 +47,10 @@ Before presenting the final plan for approval:
 2. Finish `goal.md`.
 3. Register each criterion as `UNVERIFIED`, including `--proves`, one or more `--failure-mode`, `--basis`, and `--verified-by` values.
 4. Register each exact verifier command as a `PENDING` required check.
-5. Assess all eight acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`.
+5. Assess the profile's acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`: four core dimensions for `standard`, all eight for `strict`.
 6. Run `plan-check`. Resolve every gap, then present the complete plan and acceptance contract for approval.
 7. Only after the user's explicit approval, run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
-8. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes.
+8. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes, then run `bind-worktree`.
 9. Commit the approved plan and acceptance-contract checkpoint.
 
 ## Execute autonomous epochs
@@ -91,7 +91,10 @@ Use these commands instead of inventing state transitions:
 
 ```text
 status
+summary
+report
 plan-check
+bind-worktree
 update --status EXECUTING --milestone M2 --next-action "..." --progress
 verify --id TEST
 pause --reason "..."
