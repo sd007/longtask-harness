@@ -63,7 +63,7 @@ def tool_definition() -> dict[str, Any]:
                 "revision": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "当前方案 revision。",
+                    "description": "当前状态 state_revision，用于防止过期按钮提交。",
                 },
                 "summary": {
                     "type": "string",
@@ -166,6 +166,7 @@ class ApprovalServer:
         approved_by: str,
         decision: str,
         feedback: str,
+        state_revision: int | None = None,
     ) -> tuple[bool, str]:
         command = [sys.executable, str(CONTROLLER), "--root", str(root)]
         if phase == "plan" and decision == "approve":
@@ -176,6 +177,8 @@ class ApprovalServer:
             command += ["reject", "--reason", feedback or "用户选择需要修改交付"]
         else:
             return True, "未执行状态转换"
+        if state_revision is not None:
+            command += ["--expected-state-revision", str(state_revision)]
         if goal_id:
             command += ["--goal-id", goal_id]
         result = subprocess.run(command, text=True, capture_output=True, check=False)
@@ -197,6 +200,15 @@ class ApprovalServer:
         revision = arguments.get("revision")
         approved_by = _text(arguments.get("approved_by"), default="user", limit=100) or "user"
         next_action = _text(arguments.get("next_action"), limit=1000)
+        if goal_id:
+            state_path = root / ".goal-flow" / goal_id / "state.json"
+            if state_path.exists() and revision is not None:
+                try:
+                    current_revision = int(json.loads(state_path.read_text(encoding="utf-8")).get("state_revision", 0))
+                except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                    return {"isError": True, "content": [{"type": "text", "text": "无法读取当前 Goal Flow 状态，请刷新后重试"}]}
+                if current_revision != int(revision):
+                    return {"isError": True, "content": [{"type": "text", "text": "状态已更新，请刷新后重新审批"}]}
         message = f"{approval_schema(phase)['message']}\n\nRevision: {revision or '当前'}\n\n{summary}"
         result = self.elicit(phase, message)
         action = _text(result.get("action"))
@@ -211,7 +223,10 @@ class ApprovalServer:
         expected = {"plan": {"approve", "modify"}, "delivery": {"accept", "revise"}}[phase]
         if decision not in expected:
             return {"isError": True, "content": [{"type": "text", "text": "审批控件返回了无效决定"}]}
-        ok, transition = self.run_transition(phase, root, goal_id, next_action, approved_by, decision, feedback)
+        ok, transition = self.run_transition(
+            phase, root, goal_id, next_action, approved_by, decision, feedback,
+            int(revision) if revision is not None else None,
+        )
         payload = {
             "ok": ok,
             "phase": phase,
@@ -232,7 +247,7 @@ class ApprovalServer:
             self.response(request_id, {
                 "protocolVersion": request.get("params", {}).get("protocolVersion", "2024-11-05"),
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "goal-flow-approval", "version": "0.8.0"},
+                "serverInfo": {"name": "goal-flow-approval", "version": "0.9.0"},
             })
         elif method == "notifications/initialized":
             return

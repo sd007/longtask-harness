@@ -20,7 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = {1, SCHEMA_VERSION}
 REQUIREMENT_STATUSES = {"VERIFIED", "PARTIAL", "UNVERIFIED", "CONTRADICTED"}
 CHECK_STATUSES = {"PASS", "FAIL", "PENDING"}
 RISK_STATUSES = {"OPEN", "MITIGATED", "ACCEPTED"}
@@ -38,7 +39,7 @@ ACCEPTANCE_DIMENSIONS = {
     "documentation-deliverables",
 }
 PROFILES = {"standard", "strict"}
-HARNESS_MODES = {"auto", "micro", "standard", "goal-flow"}
+HARNESS_MODES = {"auto", "micro", "standard", "goal-flow", "strict"}
 TASK_TYPES = {"unspecified", "fix", "feature", "refactor", "docs", "test", "config", "migration"}
 RISK_LEVELS = {"unspecified", "low", "medium", "high", "critical"}
 FAILURE_CLASSES = {
@@ -230,17 +231,19 @@ def classify_harness(
         mode = "standard"
         profile = "standard"
         reasons.append("multiple steps or observable behavior change needs a structured plan")
-    elif default_mode in {"micro", "standard", "goal-flow"}:
-        mode = default_mode
-        profile = "standard"
+    elif default_mode in {"micro", "standard", "goal-flow", "strict"}:
+        mode = "goal-flow" if default_mode == "strict" else default_mode
+        profile = "strict" if default_mode == "strict" else "standard"
         reasons.append("small, bounded task fits the smallest requested harness")
     else:
         mode = "standard"
         profile = "standard"
         reasons.append("defaulting to a lightweight structured plan")
+    resolved = "strict" if profile == "strict" else "goal-flow" if mode == "goal-flow" else mode
     return {
         "mode": mode,
         "profile": profile,
+        "resolved_harness": resolved,
         "task_type": task_type,
         "risk_level": risk_level,
         "behavior_change": bool(behavior_change),
@@ -308,7 +311,36 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
     })
     state.setdefault("state_revision", 0)
     state.setdefault("contract_version", 1)
+    state.setdefault("resolved_harness", resolve_harness(state))
+    state.setdefault("decision_check", {
+        "auto_decided": [],
+        "recommended_defaults": [],
+        "user_decisions": [],
+        "status": "none",
+    })
+    state.setdefault("delivery_attempt", 0)
+    state.setdefault("delivery_feedback", None)
+    state.setdefault("delivery_rejection_baseline", None)
+    state.setdefault("epoch", None)
+    if state.get("schema_version", 1) < SCHEMA_VERSION:
+        state["schema_version"] = SCHEMA_VERSION
     return goal_id, directory, state
+
+
+def resolve_harness(state: dict[str, Any]) -> str:
+    """Normalize legacy mode/profile combinations into one public harness."""
+    harness = state.get("harness") or {}
+    if state.get("resolved_harness") and state.get("resolved_harness") not in {"micro", "standard", "goal-flow", "strict"}:
+        errors.append(f"invalid resolved_harness: {state.get('resolved_harness')}")
+    mode = harness.get("mode") or state.get("mode") or "goal-flow"
+    profile = state.get("profile", "strict")
+    if profile == "strict" or mode == "strict":
+        return "strict"
+    if mode == "goal-flow":
+        return "goal-flow"
+    if mode == "micro":
+        return "micro"
+    return "standard"
 
 
 def save_state(directory: Path, state: dict[str, Any]) -> None:
@@ -336,11 +368,52 @@ def deactivate_goal(root: Path, goal_id: str) -> None:
         })
 
 
+def activate_goal(root: Path, goal_id: str, state: dict[str, Any], *, switch: bool = False) -> None:
+    """Make exactly one non-terminal goal active, without implicit takeover."""
+    current_id = active_goal_id(root)
+    if current_id and current_id != goal_id:
+        current_dir = goal_dir(root, current_id)
+        current_path = current_dir / "state.json"
+        if current_path.exists():
+            current = load_json(current_path)
+            if current.get("status") not in {"ACCEPTED", "CANCELLED"}:
+                if not switch:
+                    raise GoalFlowError(
+                        f"Active goal {current_id!r} is {current.get('status')}; pass --switch to activate {goal_id!r}"
+                    )
+                current["resume_status"] = current.get("status")
+                current["status"] = "PAUSED"
+                current["wait_reason"] = f"Switched to goal {goal_id}"
+                save_state(current_dir, current)
+    atomic_json_write(active_file(root), {"goal_id": goal_id, "updated_at": now()})
+
+
+def list_goals(root: Path) -> list[dict[str, Any]]:
+    store = goal_store(root)
+    result: list[dict[str, Any]] = []
+    if not store.exists():
+        return result
+    current = active_goal_id(root)
+    for directory in sorted(store.iterdir()):
+        path = directory / "state.json"
+        if not directory.is_dir() or not path.exists():
+            continue
+        state = load_json(path)
+        result.append({
+            "goal_id": state.get("goal_id", directory.name),
+            "title": state.get("title"),
+            "status": state.get("status"),
+            "active": state.get("goal_id", directory.name) == current,
+            "updated_at": state.get("updated_at"),
+            "resolved_harness": state.get("resolved_harness") or resolve_harness(state),
+        })
+    return result
+
+
 def is_lightweight_standard(state: dict[str, Any]) -> bool:
     """Return whether the goal uses the day-to-day Standard path."""
     return (
-        state.get("profile") == "standard"
-        and state.get("harness", {}).get("mode") == "standard"
+        resolve_harness(state) == "standard"
     )
 
 
@@ -356,11 +429,13 @@ def standard_auto_completion_allowed(state: dict[str, Any]) -> bool:
 def compact_harness(state: dict[str, Any]) -> dict[str, Any]:
     """Expose only resolved harness facts in user-facing summaries."""
     harness = state.get("harness", {})
-    return {
+    result = {
         key: harness.get(key)
         for key in ("mode", "task_type", "risk_level", "behavior_change")
         if key in harness
     }
+    result["resolved_harness"] = state.get("resolved_harness") or resolve_harness(state)
+    return result
 
 
 def product_worktree_fingerprint(root: Path) -> str:
@@ -447,6 +522,8 @@ def definitions_hash(state: dict[str, Any]) -> str:
     if int(state.get("contract_version", 1)) >= 2:
         definitions["profile"] = state.get("profile", "strict")
         definitions["harness"] = state.get("harness", {})
+        definitions["resolved_harness"] = state.get("resolved_harness") or resolve_harness(state)
+        definitions["decision_check"] = state.get("decision_check", {})
     raw = json.dumps(definitions, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -466,7 +543,7 @@ def current_branch(root: Path) -> str | None:
     return run_git(root, "branch", "--show-current")
 
 
-def current_worktree_identity(root: Path) -> dict[str, str]:
+def current_worktree_identity(root: Path) -> dict[str, Any]:
     top = run_git(root, "rev-parse", "--show-toplevel")
     git_dir = run_git(root, "rev-parse", "--absolute-git-dir")
     branch = current_branch(root)
@@ -474,11 +551,42 @@ def current_worktree_identity(root: Path) -> dict[str, str]:
         raise GoalFlowError("Worktree binding requires a Git worktree")
     if not branch:
         raise GoalFlowError("Worktree binding requires a named branch; detached HEAD is not supported")
+    worktrees = run_git(root, "worktree", "list", "--porcelain") or ""
+    primary = None
+    for line in worktrees.splitlines():
+        if line.startswith("worktree "):
+            primary = str(Path(line.split(" ", 1)[1]).resolve())
+            break
+    resolved_root = str(Path(top).resolve())
     return {
-        "root": str(Path(top).resolve()),
+        "root": resolved_root,
         "git_dir": str(Path(git_dir).resolve()),
         "branch": branch,
+        "is_primary_worktree": resolved_root == primary,
     }
+
+
+def enforce_isolation_policy(
+    root: Path, state: dict[str, Any], binding: dict[str, Any] | None = None
+) -> None:
+    """Full/strict Harnesses may not silently run on a normal primary branch."""
+    if resolve_harness(state) not in {"goal-flow", "strict"}:
+        return
+    binding = binding or state.get("worktree_binding") or {}
+    mode = binding.get("isolation_mode")
+    if mode == "explicit_current_worktree":
+        if not binding.get("override_reason"):
+            raise GoalFlowError("Current-worktree exceptions require an audit reason")
+        return
+    branch = str(binding.get("branch") or "")
+    if branch.startswith("codex/goal-flow-"):
+        return
+    if binding.get("is_primary_worktree") is False:
+        return
+    raise GoalFlowError(
+        "Full/strict goals require a codex/goal-flow-* branch or an independent Git worktree; "
+        "use --allow-current-worktree --reason only for an explicit exception"
+    )
 
 
 def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
@@ -500,6 +608,7 @@ def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
             for key in mismatches
         )
         raise GoalFlowError(f"Worktree binding mismatch: {rendered}")
+    enforce_isolation_policy(root, state, binding)
 
 
 def product_status(root: Path) -> str | None:
@@ -560,6 +669,27 @@ def evidence_is_fresh(
     return changed == ""
 
 
+def evidence_is_fresh_after_rejection(item: dict[str, Any], baseline: dict[str, Any] | None) -> bool:
+    """Rejecting delivery creates a new evidence epoch; old receipts cannot reopen Gate."""
+    if not baseline:
+        return True
+    try:
+        rejected_ns = int(baseline.get("rejected_at_ns") or 0)
+        updated_ns = int(item.get("updated_at_ns") or 0)
+    except (TypeError, ValueError):
+        rejected_ns = 0
+        updated_ns = 0
+    if rejected_ns and updated_ns:
+        time_is_new = updated_ns > rejected_ns
+    else:
+        rejected_at = str(baseline.get("rejected_at") or "")
+        updated_at = str(item.get("updated_at") or "")
+        time_is_new = bool(updated_at and rejected_at and updated_at > rejected_at)
+    receipt_id = item.get("receipt_id")
+    old_receipts = set(baseline.get("receipt_ids") or [])
+    return bool(time_is_new and receipt_id not in old_receipts)
+
+
 def verifiers_are_fresh(root: Path, state: dict[str, Any], check_ids: list[str]) -> bool:
     return bool(check_ids) and all(
         check_id in state.get("checks", {})
@@ -604,7 +734,7 @@ def validate_state(state: dict[str, Any]) -> list[str]:
     missing = sorted(required - state.keys())
     if missing:
         errors.append(f"missing state fields: {', '.join(missing)}")
-    if state.get("schema_version") != SCHEMA_VERSION:
+    if state.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
         errors.append(f"unsupported schema_version: {state.get('schema_version')}")
     if state.get("status") not in ALL_STATUSES:
         errors.append(f"invalid status: {state.get('status')}")
@@ -619,6 +749,17 @@ def validate_state(state: dict[str, Any]) -> list[str]:
         errors.append(f"invalid risk level: {harness.get('risk_level')}")
     if not isinstance(state.get("state_revision", 0), int) or state.get("state_revision", 0) < 0:
         errors.append("invalid state_revision")
+    decision_check = state.get("decision_check") or {}
+    if decision_check.get("status") not in {"none", "resolved", "pending"}:
+        errors.append("invalid decision_check status")
+    if not isinstance(decision_check.get("user_decisions", []), list):
+        errors.append("decision_check user_decisions must be a list")
+    binding = state.get("worktree_binding")
+    if binding:
+        if binding.get("isolation_mode") not in {"isolated_branch", "isolated_worktree", "explicit_current_worktree"}:
+            errors.append("invalid worktree isolation_mode")
+        if binding.get("isolation_mode") == "explicit_current_worktree" and not binding.get("override_reason"):
+            errors.append("current-worktree exception needs override_reason")
     for req_id, item in state.get("requirements", {}).items():
         if item.get("status") not in REQUIREMENT_STATUSES:
             errors.append(f"invalid requirement status for {req_id}")
@@ -662,6 +803,46 @@ def has_open_user_questions(text: str) -> bool:
         if substantive(value):
             return True
     return False
+
+
+def decision_check_from_goal(text: str, state: dict[str, Any]) -> dict[str, Any]:
+    """Read the small, human-editable Decision Check block with legacy fallback."""
+    current = state.get("decision_check") or {}
+    result = {
+        "auto_decided": list(current.get("auto_decided") or []),
+        "recommended_defaults": list(current.get("recommended_defaults") or []),
+        "user_decisions": list(current.get("user_decisions") or []),
+        "status": current.get("status") or "none",
+    }
+    match = re.search(
+        r"^##\s+Decision Check\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    if match:
+        section = match.group(1)
+        labels = {
+            "auto-decided": "auto_decided",
+            "recommended defaults": "recommended_defaults",
+            "user decisions": "user_decisions",
+        }
+        for label, key in labels.items():
+            found = re.search(rf"^[-*]?\s*{re.escape(label)}\s*:\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
+            if found:
+                value = found.group(1).strip()
+                result[key] = [] if value.lower() in {"none", "无", "none after repository inspection."} else [value]
+        status = re.search(r"^[-*]?\s*status\s*:\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
+        if status:
+            normalized = status.group(1).strip().lower()
+            result["status"] = "resolved" if normalized in {"resolved", "ready", "已解决", "无待决定"} else "pending"
+    if not result["user_decisions"] and has_open_user_questions(text):
+        result["user_decisions"] = ["Questions requiring user decision contains unresolved items"]
+        result["status"] = "pending"
+    elif result["status"] == "none":
+        result["status"] = "resolved"
+        if not result["auto_decided"]:
+            result["auto_decided"] = ["No high-impact decision remains after repository inspection"]
+    return result
 
 
 def valid_check_command(value: str | None) -> bool:
@@ -864,6 +1045,8 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         if "## acceptance criteria" not in lowered:
             reasons.append("goal.md needs an Acceptance criteria section")
 
+    decision_check = decision_check_from_goal(goal_text, state)
+
     requirements = state.get("requirements", {})
     must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
     if not must:
@@ -975,6 +1158,7 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         "dimensions_assessed": len(required_dimensions & dimensions.keys()),
         "dimensions_total": len(required_dimensions),
         "harness": compact_harness(state),
+        "decision_check": decision_check,
     }
 
 
@@ -1138,7 +1322,9 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
         return result
     incomplete = [
         key for key, value in must.items()
-        if value.get("status") != "VERIFIED" or not evidence_is_fresh(root, value.get("git_sha"), state)
+        if value.get("status") != "VERIFIED"
+        or not evidence_is_fresh(root, value.get("git_sha"), state)
+        or not evidence_is_fresh_after_rejection(value, state.get("delivery_rejection_baseline"))
     ]
     checks = state.get("checks", {})
     required_checks = {
@@ -1150,7 +1336,9 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
         return result
     failing_checks = [
         key for key, value in required_checks.items()
-        if value.get("status") != "PASS" or not evidence_is_fresh(root, value.get("git_sha"), state)
+        if value.get("status") != "PASS"
+        or not evidence_is_fresh(root, value.get("git_sha"), state)
+        or not evidence_is_fresh_after_rejection(value, state.get("delivery_rejection_baseline"))
     ]
     serious_risks = [
         key for key, value in state.get("risks", {}).items()
@@ -1232,6 +1420,16 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
     goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
     goal_text = goal_text.replace(
+        "## Questions requiring user decision\\n\\n",
+        "## Decision Check\\n\\n"
+        "- Status: RESOLVED\\n"
+        "- Auto-decided: No high-impact decision remains after repository inspection.\\n"
+        "- Recommended defaults: Preserve repository conventions and existing compatibility.\\n"
+        "- User decisions: None\\n\\n"
+        "## Questions requiring user decision\\n\\n",
+        1,
+    )
+    goal_text = goal_text.replace(
         "- Infer from repository and domain evidence before asking the user.",
         "- Harness mode: " + mode + ".\n"
         + "- Task type: " + args.task_type + ".\n"
@@ -1284,6 +1482,7 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
         "title": args.title,
         "goal_revision": 1,
         "profile": profile,
+        "resolved_harness": classification["resolved_harness"],
         "harness": {
             "mode": mode,
             "requested_mode": args.mode,
@@ -1312,7 +1511,17 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
         "no_progress_count": 0,
         "last_stop_fingerprint": None,
         "stop_repeat_count": 0,
+        "delivery_attempt": 0,
+        "delivery_feedback": None,
+        "delivery_rejection_baseline": None,
+        "epoch": None,
         "resume_status": None,
+        "decision_check": {
+            "auto_decided": [],
+            "recommended_defaults": [],
+            "user_decisions": [],
+            "status": "none",
+        },
         "created_at": now(),
         "updated_at": now(),
     }
@@ -1345,6 +1554,16 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if not state.get("approved"):
         payload["plan"] = plan_readiness(directory, state)
     return payload
+
+
+def cmd_goals(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    goals = list_goals(root)
+    return {
+        "ok": True,
+        "active_goal_id": active_goal_id(root) or None,
+        "goals": goals,
+        "count": len(goals),
+    }
 
 
 def concise(value: Any, limit: int = 240) -> str | None:
@@ -1684,6 +1903,35 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if not product_tree_is_clean(root):
         raise GoalFlowError("Commit or clean product-tree changes before binding the worktree")
     binding = current_worktree_identity(root)
+    if args.allow_current_worktree:
+        if not args.reason or not args.reason.strip():
+            raise GoalFlowError("--allow-current-worktree requires a non-empty --reason")
+        binding["isolation_mode"] = "explicit_current_worktree"
+        binding["override_reason"] = args.reason.strip()
+    else:
+        if (
+            resolve_harness(state) in {"goal-flow", "strict"}
+            and binding.get("is_primary_worktree") is not False
+            and not str(binding.get("branch", "")).startswith("codex/goal-flow-")
+        ):
+            isolated_branch = f"codex/goal-flow-{state['goal_id']}"
+            if run_git(root, "show-ref", "--verify", f"refs/heads/{isolated_branch}"):
+                raise GoalFlowError(
+                    f"普通分支不能直接绑定；隔离分支 {isolated_branch!r} 已存在，请切换到它或使用独立 worktree"
+                )
+            switched = subprocess.run(
+                ["git", "switch", "-c", isolated_branch],
+                cwd=root, text=True, capture_output=True, check=False,
+            )
+            if switched.returncode != 0:
+                raise GoalFlowError(f"无法自动创建隔离分支 {isolated_branch}: {(switched.stderr or '').strip()}")
+            binding = current_worktree_identity(root)
+        binding["isolation_mode"] = (
+            "isolated_worktree"
+            if binding.get("is_primary_worktree") is False
+            else "isolated_branch"
+        )
+        enforce_isolation_policy(root, state, binding)
     state["worktree_binding"] = binding
     state["branch"] = binding["branch"]
     save_state(directory, state)
@@ -1693,22 +1941,30 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
+    expected_revision = getattr(args, "expected_state_revision", None)
+    if expected_revision is not None and int(state.get("state_revision", 0)) != expected_revision:
+        raise GoalFlowError("状态已更新，请刷新方案后重新审批")
+    if state.get("approved") and state.get("status") not in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
+        return {"ok": True, "message": "Design approval already applied", "state": state, "idempotent": True}
     if state["status"] not in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
         raise GoalFlowError(f"Cannot approve from {state['status']}")
     readiness = plan_readiness(directory, state)
     if not readiness["ok"]:
         raise GoalFlowError("Plan is not approval-ready: " + "; ".join(readiness["reasons"]))
     auto_approved = bool(args.auto_approved)
+    decision_check = readiness.get("decision_check") or decision_check_from_goal(
+        (directory / "goal.md").read_text(encoding="utf-8"), state
+    )
     if auto_approved:
-        if state.get("harness", {}).get("mode") != "standard":
+        if resolve_harness(state) != "standard":
             raise GoalFlowError("Automatic approval is only available for the standard Harness")
         if state.get("profile") == "strict" or state.get("harness", {}).get("risk_level") in {"high", "critical"}:
             raise GoalFlowError("Strict or high-risk goals require explicit user approval")
-        goal_text = (directory / "goal.md").read_text(encoding="utf-8")
-        if has_open_user_questions(goal_text):
+        if decision_check.get("user_decisions"):
             raise GoalFlowError("Open high-impact user questions require explicit approval")
     if not args.user_approved and not auto_approved:
         raise GoalFlowError("Explicit user approval is required; pass --user-approved only after it is given")
+    state["decision_check"] = decision_check
     state.update({
         "approved": True,
         "approved_design_hash": design_hash(directory, state),
@@ -1780,6 +2036,18 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             if not verified_by or invalid:
                 suffix = f": {', '.join(invalid)}" if invalid else ""
                 raise GoalFlowError(f"VERIFIED requirements need fresh passing --verified-by checks{suffix}")
+            linked_shas = {
+                state["checks"][check_id].get("git_sha")
+                for check_id in verified_by
+            }
+            if len(linked_shas) != 1 or None in linked_shas:
+                raise GoalFlowError("VERIFIED requirements need linked checks from one identical Git commit")
+            derived_sha = next(iter(linked_shas))
+            if args.git_sha and args.git_sha != derived_sha:
+                raise GoalFlowError(
+                    f"Requirement evidence SHA must match linked check receipts ({derived_sha})"
+                )
+            sha = derived_sha
         state["requirements"][args.id] = {
             "statement": statement,
             "kind": kind,
@@ -1791,6 +2059,7 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "evidence": args.evidence,
             "git_sha": sha if args.status != "UNVERIFIED" else None,
             "updated_at": now(),
+            "updated_at_ns": time.time_ns(),
         }
         append_evidence(directory, f"Requirement {args.id}", {
             "status": args.status,
@@ -1895,6 +2164,13 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         append_evidence(directory, "Note", {"message": args.evidence or args.statement})
     if args.record_type in {"requirement", "check"} and args.status not in {"UNVERIFIED", "PENDING"}:
         state["last_verified_commit"] = sha
+    epoch = state.get("epoch") or {}
+    if epoch.get("target_requirement_ids") and all(
+        state.get("requirements", {}).get(req_id, {}).get("status") == "VERIFIED"
+        for req_id in epoch["target_requirement_ids"]
+    ):
+        epoch["completed_at"] = now()
+        state["epoch"] = epoch
     state["no_progress_count"] = 0
     state["stop_repeat_count"] = 0
     save_state(directory, state)
@@ -1985,6 +2261,12 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     check = state.get("checks", {}).get(args.id)
     if not check:
         raise GoalFlowError(f"Unknown check: {args.id}")
+    epoch = state.get("epoch") or {}
+    target_checks = epoch.get("target_check_ids") or []
+    if target_checks and args.id not in target_checks:
+        raise GoalFlowError(
+            f"Current execution epoch targets checks {', '.join(target_checks)}; finish the declared epoch first"
+        )
     command = check.get("command")
     if not command:
         raise GoalFlowError(f"Check {args.id} has no approved command")
@@ -2019,6 +2301,9 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "status": status,
         "summary": summary,
         "output_digest": hashlib.sha256(output.encode()).hexdigest(),
+        "receipt_id": hashlib.sha256(
+            f"{time.time_ns()}:{args.id}:{sha}:{output}".encode()
+        ).hexdigest()[:24],
         "git_sha": sha,
         "duration_ms": execution["duration_ms"],
         "timed_out": execution["timed_out"],
@@ -2027,6 +2312,7 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "recommended_action": recommended_action,
         "environment": environment_fingerprint(root),
         "updated_at": now(),
+        "updated_at_ns": time.time_ns(),
     })
     state["last_verified_commit"] = sha
     state["no_progress_count"] = 0
@@ -2081,6 +2367,29 @@ def cmd_update(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         state["stop_repeat_count"] = 0
     if args.no_progress:
         state["no_progress_count"] = int(state.get("no_progress_count", 0)) + 1
+    target_requirements = args.target_requirement_id or []
+    target_checks = args.target_check_id or []
+    if target_requirements or target_checks:
+        if not target_requirements:
+            raise GoalFlowError("An execution epoch must target at least one requirement")
+        unknown_requirements = [item for item in target_requirements if item not in state.get("requirements", {})]
+        unknown_checks = [item for item in target_checks if item not in state.get("checks", {})]
+        if unknown_requirements or unknown_checks:
+            raise GoalFlowError(
+                "Unknown epoch targets: " + ", ".join(unknown_requirements + unknown_checks)
+            )
+        completed = [
+            item for item in target_requirements
+            if state["requirements"][item].get("status") == "VERIFIED"
+        ]
+        if completed == target_requirements:
+            raise GoalFlowError("Execution epoch must target at least one unsatisfied requirement")
+        state["epoch"] = {
+            "target_requirement_ids": target_requirements,
+            "target_check_ids": target_checks,
+            "started_at": now(),
+            "completed_at": None,
+        }
     save_state(directory, state)
     return {"ok": True, "message": "State updated", "state": state}
 
@@ -2100,6 +2409,10 @@ def cmd_replan(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "wait_reason": args.reason,
         "no_progress_count": 0,
         "stop_repeat_count": 0,
+        "delivery_attempt": 0,
+        "delivery_feedback": None,
+        "delivery_rejection_baseline": None,
+        "epoch": None,
     })
     for item in state.get("requirements", {}).values():
         item.update({"status": "UNVERIFIED", "evidence": None, "git_sha": None})
@@ -2122,13 +2435,14 @@ def cmd_pause(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 
 def cmd_resume(args: argparse.Namespace, root: Path) -> dict[str, Any]:
-    _, directory, state = load_state(root, args.goal_id)
+    goal_id, directory, state = load_state(root, args.goal_id)
     if state["status"] not in {"PAUSED", "WAITING_INPUT", "WAITING_AUTHORIZATION", "BLOCKED"}:
         raise GoalFlowError(f"Cannot resume from {state['status']}")
     if state.get("approved"):
         require_bound_worktree(root, state)
     target = state.get("resume_status") or ("EXECUTING" if state.get("approved") else "PLANNING")
     state.update({"status": target, "wait_reason": None, "resume_status": None, "stop_repeat_count": 0})
+    activate_goal(root, goal_id, state, switch=args.switch)
     save_state(directory, state)
     return {"ok": True, "message": "Goal resumed", "state": state}
 
@@ -2213,6 +2527,11 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 def cmd_accept(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     goal_id, directory, state = load_state(root, args.goal_id)
+    expected_revision = getattr(args, "expected_state_revision", None)
+    if expected_revision is not None and int(state.get("state_revision", 0)) != expected_revision:
+        raise GoalFlowError("状态已更新，请刷新交付后重新审批")
+    if state.get("status") == "ACCEPTED":
+        return {"ok": True, "message": "Goal already accepted", "state": state, "idempotent": True}
     require_bound_worktree(root, state)
     if state["status"] != "READY_FOR_ACCEPTANCE":
         raise GoalFlowError("Only a goal ready for acceptance can be accepted")
@@ -2236,12 +2555,34 @@ def cmd_accept(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 def cmd_reject(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
+    expected_revision = getattr(args, "expected_state_revision", None)
+    if expected_revision is not None and int(state.get("state_revision", 0)) != expected_revision:
+        raise GoalFlowError("状态已更新，请刷新交付后重新处理")
+    if state.get("delivery_feedback") and state.get("status") in {"EXECUTING", "VERIFYING"}:
+        return {"ok": True, "message": "Delivery rejection already applied", "state": state, "idempotent": True}
     require_bound_worktree(root, state)
     if state["status"] != "READY_FOR_ACCEPTANCE":
         raise GoalFlowError("Only a goal ready for acceptance can be rejected")
+    required_receipts = [
+        item.get("receipt_id") for item in state.get("checks", {}).values()
+        if item.get("required") and item.get("status") == "PASS" and item.get("receipt_id")
+    ]
+    state["delivery_attempt"] = int(state.get("delivery_attempt", 0)) + 1
+    state["delivery_feedback"] = args.reason
+    state["delivery_rejection_baseline"] = {
+        "git_sha": current_git_sha(root),
+        "receipt_ids": required_receipts,
+        "rejected_at": now(),
+        "rejected_at_ns": time.time_ns(),
+    }
     state.update({"status": "EXECUTING", "next_action": args.reason, "wait_reason": None})
     save_state(directory, state)
-    append_evidence(directory, "Delivery rejected", {"reason": args.reason})
+    append_evidence(directory, "Delivery rejected", {
+        "reason": args.reason,
+        "attempt": state["delivery_attempt"],
+        "Git SHA": state["delivery_rejection_baseline"]["git_sha"],
+        "required receipts invalidated": ", ".join(required_receipts),
+    })
     return {"ok": True, "message": "Goal returned to execution", "state": state}
 
 
@@ -2283,6 +2624,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     bind_worktree = sub.add_parser("bind-worktree")
     bind_worktree.add_argument("--goal-id")
+    bind_worktree.add_argument("--allow-current-worktree", action="store_true")
+    bind_worktree.add_argument("--reason")
 
     approve = sub.add_parser("approve")
     approve.add_argument("--goal-id")
@@ -2291,6 +2634,9 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--user-approved", action="store_true")
     approve.add_argument("--auto-approved", action="store_true")
     approve.add_argument("--approved-by", default="user")
+    approve.add_argument("--expected-state-revision", type=int)
+
+    goals = sub.add_parser("goals")
 
     record = sub.add_parser("record")
     record.add_argument("record_type", choices=["requirement", "check", "risk", "dimension", "note"])
@@ -2348,6 +2694,8 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--next-action")
     update.add_argument("--progress", action="store_true")
     update.add_argument("--no-progress", action="store_true")
+    update.add_argument("--target-requirement-id", action="append")
+    update.add_argument("--target-check-id", action="append")
 
     replan = sub.add_parser("replan")
     replan.add_argument("--goal-id")
@@ -2359,6 +2707,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume = sub.add_parser("resume")
     resume.add_argument("--goal-id")
+    resume.add_argument("--switch", action="store_true")
 
     block = sub.add_parser("block")
     block.add_argument("--goal-id")
@@ -2377,10 +2726,12 @@ def build_parser() -> argparse.ArgumentParser:
     accept.add_argument("--goal-id")
     accept.add_argument("--user-accepted", action="store_true")
     accept.add_argument("--accepted-by", default="user")
+    accept.add_argument("--expected-state-revision", type=int)
 
     reject = sub.add_parser("reject")
     reject.add_argument("--goal-id")
     reject.add_argument("--reason", required=True)
+    reject.add_argument("--expected-state-revision", type=int)
 
     return parser
 
@@ -2388,6 +2739,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "init": cmd_init,
     "status": cmd_status,
+    "goals": cmd_goals,
     "summary": cmd_summary,
     "report": cmd_report,
     "bind-worktree": cmd_bind_worktree,
@@ -2415,7 +2767,7 @@ def main() -> int:
     args = parser.parse_args()
     root = find_root(args.root)
     try:
-        read_only = args.command in {"status", "summary", "report", "plan-check", "review", "classify"}
+        read_only = args.command in {"status", "goals", "summary", "report", "plan-check", "review", "classify"}
         if args.command == "context":
             read_only = not args.init
         if args.command == "gate":

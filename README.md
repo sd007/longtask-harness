@@ -28,9 +28,9 @@ flowchart LR
 
 ## 设计边界
 
-Goal Flow v0.8 聚焦单个 Codex、单个 Git 仓库和一个明确的活动目标。`micro` 不初始化控制器，`standard` 使用真正的轻量计划，可保留初始化前的工作树基线；完整 `goal-flow` 或 `strict` 才启用显式审批、隔离分支和完整审计。失败检查会给出分类和下一策略，项目级 `.goal-flow/context.md` 按需启用以降低重复扫描成本。行为变化目标可生成 OpenSpec 风格的 `delta.md`、`tasks.md` 和 Given/When/Then 场景，并通过 `goalctl review` 做需求、任务、场景和证据追踪。
+Goal Flow v0.9 聚焦单个 Codex、单个 Git 仓库和一个明确的活动目标。`micro` 不初始化控制器，`standard` 使用真正的轻量计划，可保留初始化前的工作树基线；完整 `goal-flow` 或 `strict` 才启用显式审批、强制隔离和完整审计。失败检查会给出分类和下一策略，项目级 `.goal-flow/context.md` 按需启用以降低重复扫描成本。行为变化目标可生成 OpenSpec 风格的 `delta.md`、`tasks.md` 和 Given/When/Then 场景，并通过 `goalctl review` 做需求、任务、场景和证据追踪。
 
-批准后，完整 Goal Flow 才用 `bind-worktree` 绑定规范化仓库、Git 目录和分支；文件锁与 revision CAS 防止并发写丢失。v0.8 继续在完整 Harness 的方案和最终交付节点通过标准 elicitation 生成可点击控件；低风险、非行为变化的 Standard 任务可隐式批准并自动完成，行为变化或中风险任务保留一次轻量交付确认。新建目标不会静默覆盖活动目标，必须显式使用 `--switch`。
+批准后，完整 Goal Flow/strict 自动使用 `codex/goal-flow-*` 隔离分支或独立 worktree；文件锁与 revision CAS 防止并发写丢失。v0.9 在所有需要显式审批的方案/交付节点通过带 `state_revision` 的 elicitation 生成可点击控件；拒绝交付会使旧回执失效，必须重新验证。低风险、非行为变化的 Standard 任务可隐式批准并自动完成，行为变化或中风险任务保留一次轻量交付确认。新建或恢复目标不会静默覆盖活动目标，必须显式使用 `--switch`。
 
 ## 快速开始
 
@@ -44,4 +44,4 @@ Goal Flow v0.8 聚焦单个 Codex、单个 Git 仓库和一个明确的活动目
 
 ## 项目状态
 
-当前版本是 `0.8.0`。它不是生产级形式化验证器；外部系统真实性、验收标准本身是否正确以及用户授权仍属于信任边界。
+当前版本是 `0.9.0`。它不是生产级形式化验证器；外部系统真实性、验收标准本身是否正确以及用户授权仍属于信任边界。

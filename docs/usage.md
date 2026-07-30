@@ -25,7 +25,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 默认使用 `standard` profile；轻量 Standard 只登记功能维度、一个可观察结果和一个真实检查，完整 Goal Flow Standard 再登记边界、兼容和文档交付，高风险任务使用 `strict` 并登记全部八维。只有完整 Goal Flow 或 strict 才强制填写完整的证据范围、失败模式和依据链；`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。低风险且没有高影响问题的 Standard 可隐式批准。
 
-完整 Goal Flow 批准时，会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件。`micro` 任务不创建完整审计目标，低风险 Standard 在没有高影响未决项时使用内部隐式批准；行为变化、中风险、跨 epoch 自主执行或高风险边界保留显式审批或最终验收。
+完整 Goal Flow、strict，以及行为变化/中风险 Standard 会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件。请求携带 `state_revision`，旧按钮不会覆盖新状态。`micro` 任务不创建完整审计目标，低风险 Standard 在没有高影响未决项时使用内部隐式批准。
 
 ```text
 例如：“按这个方案执行。”
@@ -33,7 +33,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 ## 自动执行阶段
 
-批准后，完整 Goal Flow 在实现分支执行 `bind-worktree`，再以小型 epoch 循环工作。Standard 任务可以留在当前工作树；控制器会记录初始化时的产品基线，允许基线中的既有修改保持不变，但会拒绝验证基线之外的未提交变化。提交说明默认跟随当前对话语言，仓库已有规范优先；检查回执包含真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
+批准后，完整 Goal Flow/strict 在实现分支执行 `bind-worktree`。普通主工作区会自动创建 `codex/goal-flow-<goal-id>` 隔离分支；若确需当前分支，必须显式使用 `--allow-current-worktree --reason`，原因会写入审计状态。Standard 任务可以留在当前工作树；控制器会记录初始化时的产品基线，允许基线中的既有修改保持不变，但会拒绝验证基线之外的未提交变化。提交说明默认使用当前对话语言，仓库已有规范优先。检查回执包含唯一 receipt、真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
 
 日常只需要关注两类打断：
 
@@ -74,7 +74,7 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 - “取消当前目标，原因是业务方向变化。”
 - “这项接口要求变化了，重新规划 revision 2。”
 
-`replan` 会提升 `goal_revision`、清除批准标记，并使原有需求证据和检查结果失效。若要改变需求、MUST/SHOULD 分类、验证映射或检查命令，也必须走这一流程。新方案再次明确批准后才能继续实现。
+`resume --goal-id` 会重新激活指定目标；若已有另一个非终态活动目标，必须显式使用 `--switch`，避免恢复后 active 指针仍指向错误目标。`goals` 可列出活动和暂停目标。`replan` 会提升 `goal_revision`、清除批准标记，并使原有需求证据和检查结果失效。若要改变需求、MUST/SHOULD 分类、验证映射或检查命令，也必须走这一流程。新方案再次明确批准后才能继续实现。
 
 ## 最终审查与验收
 
@@ -91,7 +91,7 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 
 最终报告应列出交付 SHA、验收标准覆盖、验证命令和结果、反证/未验证项、残余风险、回滚方式及 assurance。`HIGH` 代表硬门槛已满足，不代表数学上的 100% 正确；概率置信度在积累真实历史数据前保持 `UNCALIBRATED`。
 
-Gate 通过后，完整 Goal Flow 和发生行为变化/中风险的 Standard 会再次调用 `goal_flow_approval`，由宿主显示“接受交付”或“需要修改”。低风险、非行为变化的 Standard 在硬门槛满足后自动完成；点击“需要修改”会回到执行态，并保留补充说明。无 MCP 控件时用自然语言表达即可。
+Gate 通过后，完整 Goal Flow 和发生行为变化/中风险的 Standard 会再次调用 `goal_flow_approval`，由宿主显示“接受交付”或“需要修改”。低风险、非行为变化的 Standard 在硬门槛满足后自动完成；点击“需要修改”会回到执行态，记录拒绝基线并使旧验证回执失效，必须产生拒绝之后的新回执才能再次进入验收。无 MCP 控件时用自然语言表达即可。
 
 ## Git 约定
 

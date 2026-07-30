@@ -28,7 +28,7 @@ Goal Flow 不依赖 Agent 自报“已完成”。Skill 先根据任务规模、
 
 ## 状态一致性与执行边界
 
-控制器用 `.goal-flow/controller.lock` 的文件锁串行化读写，用递增 `state_revision` 做 compare-and-swap，避免并发更新静默覆盖。完整 Goal Flow 批准后的目标必须先执行 `bind-worktree`；Standard 记录初始化时的产品指纹，允许既有基线修改保持不变，但会阻止基线之外的变化进入验证。新目标不会静默覆盖活动目标，切换必须显式暂停旧目标。
+控制器用 `.goal-flow/controller.lock` 的文件锁串行化读写，用递增 `state_revision` 做 compare-and-swap，避免并发更新静默覆盖。完整 Goal Flow/strict 批准后的目标必须绑定 `codex/goal-flow-*` 分支或独立 worktree；当前工作区例外必须带原因并写入绑定状态。Standard 记录初始化时的产品指纹，允许既有基线修改保持不变，但会阻止基线之外的变化进入验证。新目标不会静默覆盖活动目标，切换必须显式暂停旧目标；恢复指定目标时会同步 active 指针。
 
 ## Assurance 而非伪概率
 
@@ -43,11 +43,11 @@ Goal Flow 不依赖 Agent 自报“已完成”。Skill 先根据任务规模、
 
 ## 对话交互边界
 
-提交说明遵循当前对话语言，仓库既有规范优先；控制器不强制英文。方案批准前必须显示决策检查，只有高影响未决项才会触发用户询问。插件内置 `goal_flow_approval` MCP Server，通过标准 `elicitation/create` 请求让宿主生成“批准并执行/修改方案”和“接受交付/需要修改”控件；无 MCP elicitation 时降级为自然语言。按钮或自然语言只转译为现有状态转换，不能绕过 `plan-check`、验收 Gate 或证据新鲜度。
+提交说明遵循当前对话语言，仓库既有规范优先；控制器不强制英文。方案批准前必须显示结构化决策检查，只有高影响未决项才会触发用户询问。插件内置 `goal_flow_approval` MCP Server，通过标准 `elicitation/create` 请求让宿主生成“批准并执行/修改方案”和“接受交付/需要修改”控件；请求携带 `state_revision`，过期按钮会被拒绝。无 MCP elicitation 时降级为自然语言。按钮或自然语言只转译为现有状态转换，不能绕过 `plan-check`、验收 Gate 或证据新鲜度。
 
 ## 证据新鲜度
 
-检查由控制器执行批准时冻结的命令，并记录退出码、输出摘要及 SHA-256 摘要、时间和被测试的实现提交；Agent 不能通过 `record check PASS` 自报成功。超时会先向独立进程组发送 `SIGTERM`，必要时升级为 `SIGKILL`，避免遗留子进程。回执还保存操作系统、架构、Python 版本和根目录依赖锁文件哈希，但不采集环境变量值。验收标准的 VERIFIED 状态还必须引用新鲜的 PASS 检查。为了允许证据本身入库，后续只改变 `.goal-flow/` 的提交被视为审计提交，不改变证据所描述的产品树。若工作树存在其他修改，或证据 SHA 之后任何非 `.goal-flow/` 路径发生变化，证据立即过期。
+检查由控制器执行批准时冻结的命令，并记录唯一 receipt、退出码、输出摘要及 SHA-256 摘要、时间和被测试的实现提交；Agent 不能通过 `record check PASS` 自报成功。`VERIFIED` 需求的 SHA 必须从关联 PASS 回执推导，多个回执必须指向同一提交。交付被拒绝后会建立新证据 epoch，旧 receipt 不能再次满足 Gate。超时会先向独立进程组发送 `SIGTERM`，必要时升级为 `SIGKILL`，避免遗留子进程。回执还保存操作系统、架构、Python 版本和根目录依赖锁文件哈希，但不采集环境变量值。为了允许证据本身入库，后续只改变 `.goal-flow/` 的提交被视为审计提交，不改变证据所描述的产品树。若工作树存在其他修改，或证据 SHA 之后任何非 `.goal-flow/` 路径发生变化，证据立即过期。
 
 ## 恢复与可观测性
 

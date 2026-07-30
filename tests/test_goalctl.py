@@ -890,6 +890,45 @@ Required check TEST: {check_command}
         resumed = self.ctl("resume")
         self.assertEqual(resumed["state"]["status"], "EXECUTING")
 
+    def test_resume_goal_id_requires_explicit_switch_and_updates_active_pointer(self) -> None:
+        self.ctl(
+            "init", "--goal-id", "second-goal", "--title", "Second", "--goal", "Another task", "--switch",
+        )
+        denied = self.ctl("resume", "--goal-id", "test-goal", expected=2)
+        self.assertIn("--switch", denied["error"])
+        self.assertEqual(self.ctl("status")["goal_id"], "second-goal")
+        resumed = self.ctl("resume", "--goal-id", "test-goal", "--switch")
+        self.assertEqual(resumed["state"]["goal_id"], "test-goal")
+        self.assertEqual(self.ctl("status")["goal_id"], "test-goal")
+
+    def test_delivery_rejection_invalidates_old_receipts_until_reverified(self) -> None:
+        self.register_and_approve()
+        sha = self.commit_product()
+        self.record_complete_evidence(sha)
+        ready = self.ctl("gate", "--apply")
+        self.assertEqual(ready["status"], "READY_FOR_ACCEPTANCE")
+        self.ctl("reject", "--reason", "补充边界处理")
+        blocked = self.ctl("gate")
+        self.assertEqual(blocked["gate"], "CONTINUE")
+        self.assertTrue(any("current evidence" in item or "current PASS" in item for item in blocked["reasons"]))
+        refreshed = self.ctl("verify", "--id", "TEST")
+        self.assertEqual(refreshed["status"], "PASS")
+        self.record_complete_evidence(self.git("rev-parse", "HEAD"))
+        ready_again = self.ctl("gate", "--apply")
+        self.assertEqual(ready_again["status"], "READY_FOR_ACCEPTANCE")
+
+    def test_verified_requirement_sha_must_match_linked_check_receipt(self) -> None:
+        self.register_and_approve()
+        self.commit_product()
+        self.ctl("verify", "--id", "TEST")
+        wrong = self.git("rev-parse", "HEAD^")
+        denied = self.ctl(
+            "record", "requirement", "--id", "REQ-001", "--kind", "must",
+            "--status", "VERIFIED", "--statement", "feature.txt exists with expected content",
+            "--evidence", "Verified by TEST", "--git-sha", wrong, expected=2,
+        )
+        self.assertIn("must match linked check receipts", denied["error"])
+
     def test_stop_loop_breaker_waits_after_three_unchanged_attempts(self) -> None:
         self.register_and_approve()
         first = self.ctl("gate", "--stop-event")
