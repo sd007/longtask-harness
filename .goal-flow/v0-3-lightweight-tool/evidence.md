@@ -300,3 +300,8 @@
 - **what evidence proves:** 全量回归、Python 编译检查和文档契约检查证明兼容路径及交付说明存在。
 - **failure modes:** 旧状态不得要求离线迁移；现有 JSON 消费者不得因新增命令改变既有输出；安装失败回滚行为不得退化。
 - **basis:** 当前 31 个基线测试、标准库依赖承诺和用户要求轻便升级
+
+## 2026-07-30T07:18:41Z — User acceptance
+- **status:** ACCEPTED
+- **accepted by:** user
+- **Git SHA:** 968523a5733ecd8abfa27d482be089919035d240

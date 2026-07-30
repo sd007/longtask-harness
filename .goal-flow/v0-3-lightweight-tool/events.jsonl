@@ -20,3 +20,4 @@
 {"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":22,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
 {"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":23,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
 {"event":"gate","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","result":"READY_FOR_REVIEW","revision":23,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
+{"event":"accept","git_sha":"968523a5733ecd8abfa27d482be089919035d240","milestone":"M4","revision":24,"status":"ACCEPTED","time":"2026-07-30T07:18:41Z"}
