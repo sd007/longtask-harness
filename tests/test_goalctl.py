@@ -10,6 +10,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "goal-flow" / "skills" / "goal-flow" / "scripts" / "goalctl.py"
+DIMENSIONS = [
+    "functional",
+    "negative-boundary",
+    "regression-compatibility",
+    "security-privacy",
+    "performance-reliability",
+    "operations-observability",
+    "migration-rollback",
+    "documentation-deliverables",
+]
 
 
 class GoalCtlTests(unittest.TestCase):
@@ -43,15 +53,99 @@ class GoalCtlTests(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stderr + result.stdout)
         return json.loads(result.stdout)
 
-    def register_and_approve(self, check_command: str = "test -f feature.txt") -> None:
+    def test_status_is_graceful_without_an_active_goal(self) -> None:
+        self.ctl("cancel", "--reason", "test status without an active goal")
+        payload = self.ctl("status")
+        self.assertFalse(payload["active"])
+        self.assertIn("No active goal", payload["message"])
+
+    def write_complete_goal(self, check_command: str = "test -f feature.txt") -> None:
+        goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
+        dimension_lines = []
+        for dimension in DIMENSIONS:
+            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+                rationale = f"{dimension} is covered by the observable acceptance criterion"
+                dimension_lines.append(f"- {dimension}: COVERED; {rationale}; REQ-001")
+            else:
+                rationale = f"{dimension} has no material impact for this isolated file fixture"
+                dimension_lines.append(f"- {dimension}: N_A; {rationale}")
+        goal.write_text(
+            f"""# Test Goal
+
+## Outcome
+Ship an observable feature.
+
+## Non-goals
+- No unrelated refactoring.
+
+## Context and sources
+- Existing repository behavior and tests.
+
+## Assumptions and decisions
+- Preserve compatibility.
+
+## Questions requiring user decision
+- None after repository inspection.
+
+## Approved design
+Add feature.txt with deterministic behavior.
+
+## Acceptance dimensions
+{chr(10).join(dimension_lines)}
+
+## Acceptance criteria
+REQ-001 | MUST | feature.txt exists with expected content | The committed feature artifact exists and is readable | The file is missing or contains unexpected content | The requested repository outcome and existing test conventions | TEST
+
+Required check TEST: {check_command}
+
+## Milestones
+1. Implement and verify.
+
+## Risks, migration, and rollback
+- Revert the implementation commit.
+
+## Approval
+- Revision: 1
+- Status: PENDING
+""",
+            encoding="utf-8",
+        )
+
+    def register_requirement(self) -> None:
+        self.ctl(
+            "record", "requirement", "--id", "REQ-001", "--kind", "must",
+            "--status", "UNVERIFIED", "--statement", "feature.txt exists with expected content",
+            "--proves", "The committed feature artifact exists and is readable",
+            "--failure-mode", "The file is missing or contains unexpected content",
+            "--basis", "The requested repository outcome and existing test conventions",
+            "--verified-by", "TEST",
+        )
+
+    def register_dimensions(self) -> None:
+        for dimension in DIMENSIONS:
+            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+                self.ctl(
+                    "record", "dimension", "--id", dimension, "--status", "COVERED",
+                    "--rationale", f"{dimension} is covered by the observable acceptance criterion",
+                    "--requirement-id", "REQ-001",
+                )
+            else:
+                self.ctl(
+                    "record", "dimension", "--id", dimension, "--status", "N_A",
+                    "--rationale", f"{dimension} has no material impact for this isolated file fixture",
+                )
+
+    def prepare_plan(self, check_command: str = "test -f feature.txt") -> None:
+        self.write_complete_goal(check_command)
         self.ctl(
             "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
             "--command", check_command,
         )
-        self.ctl(
-            "record", "requirement", "--id", "REQ-001", "--kind", "must",
-            "--status", "UNVERIFIED", "--statement", "Feature works", "--verified-by", "TEST",
-        )
+        self.register_requirement()
+        self.register_dimensions()
+
+    def register_and_approve(self, check_command: str = "test -f feature.txt") -> None:
+        self.prepare_plan(check_command)
         self.ctl("approve", "--user-approved", "--next-action", "Implement feature")
 
     def commit_product(self, content: str = "done\n") -> str:
@@ -65,7 +159,7 @@ class GoalCtlTests(unittest.TestCase):
         self.assertEqual(verified["status"], "PASS")
         self.ctl(
             "record", "requirement", "--id", "REQ-001", "--kind", "must",
-            "--status", "VERIFIED", "--statement", "Feature works",
+            "--status", "VERIFIED", "--statement", "feature.txt exists with expected content",
             "--evidence", "Verified by the executed TEST receipt", "--git-sha", sha,
         )
 
@@ -74,14 +168,7 @@ class GoalCtlTests(unittest.TestCase):
         self.assertIn("MUST", payload["error"])
 
     def test_approval_requires_explicit_user_flag(self) -> None:
-        self.ctl(
-            "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
-            "--command", "true",
-        )
-        self.ctl(
-            "record", "requirement", "--id", "REQ-001", "--kind", "must",
-            "--status", "UNVERIFIED", "--statement", "Feature works", "--verified-by", "TEST",
-        )
+        self.prepare_plan()
         payload = self.ctl("approve", "--next-action", "Implement", expected=2)
         self.assertIn("Explicit user approval", payload["error"])
 
@@ -113,15 +200,14 @@ class GoalCtlTests(unittest.TestCase):
         self.assertEqual(stale["must_requirement_coverage"], 0)
 
     def test_approval_requires_a_required_check(self) -> None:
-        self.ctl(
-            "record", "requirement", "--id", "REQ-001", "--kind", "must",
-            "--status", "UNVERIFIED", "--statement", "Feature works", "--verified-by", "TEST",
-        )
+        self.write_complete_goal()
+        self.register_requirement()
+        self.register_dimensions()
         payload = self.ctl("approve", "--user-approved", "--next-action", "Implement", expected=2)
         self.assertIn("required PENDING check", payload["error"])
 
     def test_controller_executes_checks_and_rejects_self_reported_pass(self) -> None:
-        self.register_and_approve(check_command="false")
+        self.register_and_approve(check_command="python3 -c 'raise SystemExit(1)'")
         denied = self.ctl(
             "record", "check", "--id", "TEST", "--status", "PASS",
             "--command", "true", "--evidence", "claimed pass", expected=2,
@@ -135,7 +221,7 @@ class GoalCtlTests(unittest.TestCase):
     def test_check_command_cannot_run_before_approval(self) -> None:
         self.ctl(
             "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
-            "--command", "true",
+            "--command", "python3 -c 'print(1)'",
         )
         denied = self.ctl("verify", "--id", "TEST", expected=2)
         self.assertIn("before explicit design approval", denied["error"])
@@ -152,6 +238,35 @@ class GoalCtlTests(unittest.TestCase):
         state["requirements"]["REQ-001"]["kind"] = "should"
         state_path.write_text(json.dumps(state), encoding="utf-8")
         self.assertTrue(self.ctl("status")["design_drift"])
+
+    def test_plan_check_requires_detailed_acceptance_contract(self) -> None:
+        incomplete = self.ctl("plan-check", expected=1)
+        self.assertEqual(incomplete["gate"], "REVISE_PLAN")
+        self.assertTrue(any("placeholder" in reason for reason in incomplete["reasons"]))
+        self.prepare_plan()
+        ready = self.ctl("plan-check")
+        self.assertEqual(ready["gate"], "READY_FOR_APPROVAL")
+        self.assertEqual(ready["dimensions_assessed"], 8)
+
+    def test_plan_check_rejects_machine_only_acceptance_details(self) -> None:
+        self.prepare_plan()
+        goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8").replace(
+                "The file is missing or contains unexpected content", "Hidden from user-facing plan"
+            ),
+            encoding="utf-8",
+        )
+        payload = self.ctl("plan-check", expected=1)
+        self.assertTrue(any("not visible" in reason for reason in payload["reasons"]))
+
+    def test_approved_acceptance_dimensions_are_frozen(self) -> None:
+        self.register_and_approve()
+        denied = self.ctl(
+            "record", "dimension", "--id", "functional", "--status", "N_A",
+            "--rationale", "Attempt to weaken the approved functional quality gate", expected=2,
+        )
+        self.assertIn("frozen", denied["error"])
 
     def test_final_acceptance_requires_explicit_user_flag(self) -> None:
         self.register_and_approve()

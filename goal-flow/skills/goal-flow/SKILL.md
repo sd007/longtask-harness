@@ -26,28 +26,32 @@ Do not edit `state.json` directly. Use the controller.
 ## Start or resume
 
 1. Run `status`.
-2. If an active goal exists, read its `goal.md`, `state.json`, `evidence.md`, and current Git state. Resume the recorded `next_action`.
-3. Otherwise run `init --goal-id <slug> --title <title> --goal <outcome>`.
+2. If `active` is true, read its `goal.md`, `state.json`, `evidence.md`, and current Git state. Resume the recorded `next_action`.
+3. If `active` is false, run `init --goal-id <slug> --title <title> --goal <outcome>`.
 4. Read [planning.md](references/planning.md) completely and conduct the design phase.
 
 ## Design before implementation
 
-Inspect the repository, `AGENTS.md`, existing behavior, tests, relevant official documentation, constraints, risks, migration needs, and rollback path. Turn the request into explicit `MUST` requirements and verifiers.
+Inspect the repository, `AGENTS.md`, existing behavior, tests, history, relevant official documentation, domain standards, constraints, risks, migration needs, and rollback path. First infer a complete proposal and acceptance contract yourself. Ask the user only about unresolved, high-impact choices that cannot be answered from evidence; include a recommended default and consequence.
 
 Discuss material choices with the user until they explicitly approve the design. Before approval:
 
 - Do not change implementation code.
 - Do not weaken the requested outcome to make it easier.
 - Keep unresolved assumptions visible.
+- Treat acceptance criteria as the definition of completion, not as a checklist added after designing.
 
-When the user says the proposed design is ready to approve:
+Before presenting the final plan for approval:
 
-1. Finish `goal.md`.
-2. Register every requirement as `UNVERIFIED` with one or more `--verified-by <check-id>` values.
-3. Register each exact verifier command as a `PENDING` check. At least one check must be `--required`; these commands are part of the contract the user is approving.
-4. Only after the user's explicit approval, run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
-5. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes.
-6. Commit the approved design checkpoint.
+1. Finish the evidence-backed draft. If a high-impact question remains unresolved, ask it with a recommended default and incorporate the answer.
+2. Finish `goal.md`.
+3. Register each criterion as `UNVERIFIED`, including `--proves`, one or more `--failure-mode`, `--basis`, and `--verified-by` values.
+4. Register each exact verifier command as a `PENDING` required check.
+5. Assess all eight acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`.
+6. Run `plan-check`. Resolve every gap, then present the complete plan and acceptance contract for approval.
+7. Only after the user's explicit approval, run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
+8. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes.
+9. Commit the approved plan and acceptance-contract checkpoint.
 
 ## Execute autonomous epochs
 
@@ -59,8 +63,8 @@ Read [execution.md](references/execution.md) before coding. Repeat:
 4. **Preflight:** Run targeted checks directly, inspect the diff, and test negative paths while the implementation is still editable.
 5. **Commit:** Commit the coherent implementation candidate so evidence can bind to an immutable SHA.
 6. **Verify:** Run approved checks through `verify --id <check-id>`. The controller executes the frozen command and records its exit code, output digest, and tested Git SHA. If one fails, fix and create a new implementation commit. Add a verifier only through `replan`.
-7. **Record:** Mark requirements `VERIFIED` only after all their approved `verified_by` checks have fresh PASS receipts. Record risks and counter-evidence, then commit the `.goal-flow/` audit update separately.
-8. **Gate:** Run `gate --apply` and follow its `next_action`.
+7. **Record:** Mark acceptance criteria `VERIFIED` only after all their approved `verified_by` checks have fresh PASS receipts. Record risks and counter-evidence, then commit the `.goal-flow/` audit update separately.
+8. **Gate:** Run `gate --apply`. Choose the next epoch from the largest unsatisfied approved acceptance criterion.
 
 Do not stop merely because a checklist is exhausted. Stop only when the Gate returns `WAIT`, `READY_FOR_REVIEW`, or the user pauses or cancels.
 
@@ -71,7 +75,7 @@ If a material requirement, architecture, public interface, quality threshold, pe
 Read [verification.md](references/verification.md) completely before final review.
 
 - Re-run required checks against the current Git SHA.
-- Reconstruct coverage from the approved requirements rather than the worker summary.
+- Reconstruct coverage from the approved acceptance criteria rather than the worker summary.
 - Use a fresh-context reviewer for substantial changes when available.
 - Treat subagent reports as candidate findings, never as proof.
 - Preserve counter-evidence and residual risks.
@@ -87,6 +91,7 @@ Use these commands instead of inventing state transitions:
 
 ```text
 status
+plan-check
 update --status EXECUTING --milestone M2 --next-action "..." --progress
 verify --id TEST
 pause --reason "..."

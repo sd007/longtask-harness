@@ -21,6 +21,23 @@ CHECK_STATUSES = {"PASS", "FAIL", "PENDING"}
 RISK_STATUSES = {"OPEN", "MITIGATED", "ACCEPTED"}
 RISK_SEVERITIES = {"low", "medium", "high", "critical"}
 RISK_SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+DIMENSION_STATUSES = {"COVERED", "N_A"}
+ACCEPTANCE_DIMENSIONS = {
+    "functional",
+    "negative-boundary",
+    "regression-compatibility",
+    "security-privacy",
+    "performance-reliability",
+    "operations-observability",
+    "migration-rollback",
+    "documentation-deliverables",
+}
+PLACEHOLDER_MARKERS = {
+    "to be defined during planning",
+    "define during planning",
+    "pending user discussion and approval",
+    "repository and domain context to be investigated",
+}
 WAIT_STATUSES = {
     "PLANNING",
     "WAITING_PLAN_APPROVAL",
@@ -120,6 +137,7 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
         raise GoalFlowError("No active goal")
     directory = goal_dir(root, goal_id)
     state = load_json(directory / "state.json")
+    state.setdefault("dimensions", {})
     return goal_id, directory, state
 
 
@@ -149,6 +167,9 @@ def definitions_hash(state: dict[str, Any]) -> str:
                 "statement": value.get("statement"),
                 "kind": value.get("kind"),
                 "verified_by": sorted(value.get("verified_by") or []),
+                "proves": value.get("proves"),
+                "failure_modes": sorted(value.get("failure_modes") or []),
+                "basis": sorted(value.get("basis") or []),
             }
             for key, value in sorted(state.get("requirements", {}).items())
         },
@@ -159,6 +180,14 @@ def definitions_hash(state: dict[str, Any]) -> str:
                 "timeout": value.get("timeout"),
             }
             for key, value in sorted(state.get("checks", {}).items())
+        },
+        "dimensions": {
+            key: {
+                "status": value.get("status"),
+                "rationale": value.get("rationale"),
+                "requirement_ids": sorted(value.get("requirement_ids") or []),
+            }
+            for key, value in sorted(state.get("dimensions", {}).items())
         },
     }
     raw = json.dumps(definitions, sort_keys=True, separators=(",", ":"))
@@ -258,6 +287,7 @@ def validate_state(state: dict[str, Any]) -> list[str]:
         "requirements",
         "checks",
         "risks",
+        "dimensions",
     }
     missing = sorted(required - state.keys())
     if missing:
@@ -279,7 +309,125 @@ def validate_state(state: dict[str, Any]) -> list[str]:
             errors.append(f"invalid risk status for {risk_id}")
         if item.get("severity") not in RISK_SEVERITIES:
             errors.append(f"invalid risk severity for {risk_id}")
+    for dimension_id, item in state.get("dimensions", {}).items():
+        if dimension_id not in ACCEPTANCE_DIMENSIONS:
+            errors.append(f"invalid acceptance dimension: {dimension_id}")
+        if item.get("status") not in DIMENSION_STATUSES:
+            errors.append(f"invalid dimension status for {dimension_id}")
     return errors
+
+
+def substantive(value: str | None) -> bool:
+    if not value or len(value.strip()) < 8:
+        return False
+    lowered = value.strip().lower()
+    return not any(marker in lowered for marker in PLACEHOLDER_MARKERS)
+
+
+def valid_check_command(value: str | None) -> bool:
+    if not value or not value.strip():
+        return False
+    return value.strip().lower() not in {"true", ":", "exit 0"}
+
+
+def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
+    reasons: list[str] = []
+    goal_path = directory / "goal.md"
+    goal_text = ""
+    if not goal_path.exists():
+        reasons.append("goal.md is missing")
+    else:
+        goal_text = goal_path.read_text(encoding="utf-8")
+        lowered = goal_text.lower()
+        for marker in sorted(PLACEHOLDER_MARKERS):
+            if marker in lowered:
+                reasons.append(f"goal.md still contains placeholder: {marker}")
+        if "## acceptance criteria" not in lowered:
+            reasons.append("goal.md needs an Acceptance criteria section")
+
+    requirements = state.get("requirements", {})
+    must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
+    if not must:
+        reasons.append("Register at least one MUST acceptance criterion")
+
+    required_checks = {
+        key: value for key, value in state.get("checks", {}).items() if value.get("required")
+    }
+    if not required_checks:
+        reasons.append("Register at least one required PENDING check")
+    for check_id, check in required_checks.items():
+        if not valid_check_command(check.get("command")):
+            reasons.append(f"Required check {check_id} has no substantive executable command")
+        if check.get("status") != "PENDING":
+            reasons.append(f"Required check {check_id} must be PENDING at approval")
+        if check_id not in goal_text or str(check.get("command")) not in goal_text:
+            reasons.append(f"Required check {check_id} and its exact command must appear in goal.md")
+
+    for req_id, criterion in must.items():
+        if not substantive(criterion.get("statement")):
+            reasons.append(f"MUST criterion {req_id} lacks an observable outcome")
+        if not substantive(criterion.get("proves")):
+            reasons.append(f"MUST criterion {req_id} must state what its evidence proves")
+        if not criterion.get("failure_modes") or not all(
+            substantive(item) for item in criterion.get("failure_modes", [])
+        ):
+            reasons.append(f"MUST criterion {req_id} needs negative or boundary failure modes")
+        if not criterion.get("basis") or not all(
+            substantive(item) for item in criterion.get("basis", [])
+        ):
+            reasons.append(f"MUST criterion {req_id} needs repository, domain, or user basis")
+        verifiers = criterion.get("verified_by") or []
+        if not verifiers:
+            reasons.append(f"MUST criterion {req_id} has no --verified-by check")
+        invalid = [check_id for check_id in verifiers if check_id not in required_checks]
+        if invalid:
+            reasons.append(
+                f"MUST criterion {req_id} references non-required checks: {', '.join(invalid)}"
+            )
+        visible_values = [
+            req_id,
+            criterion.get("statement"),
+            criterion.get("proves"),
+            *(criterion.get("failure_modes") or []),
+            *(criterion.get("basis") or []),
+        ]
+        for value in visible_values:
+            if value and str(value) not in goal_text:
+                reasons.append(f"MUST criterion {req_id} detail is not visible in goal.md: {value}")
+
+    dimensions = state.get("dimensions", {})
+    missing_dimensions = sorted(ACCEPTANCE_DIMENSIONS - dimensions.keys())
+    if missing_dimensions:
+        reasons.append(f"Unassessed acceptance dimensions: {', '.join(missing_dimensions)}")
+    for dimension_id in sorted(ACCEPTANCE_DIMENSIONS & dimensions.keys()):
+        dimension = dimensions[dimension_id]
+        status = dimension.get("status")
+        rationale = dimension.get("rationale")
+        linked = dimension.get("requirement_ids") or []
+        if not substantive(rationale):
+            reasons.append(f"Acceptance dimension {dimension_id} needs a substantive rationale")
+        if status == "COVERED":
+            if not linked:
+                reasons.append(f"Covered dimension {dimension_id} needs linked requirement IDs")
+            unknown = [req_id for req_id in linked if req_id not in requirements]
+            if unknown:
+                reasons.append(
+                    f"Acceptance dimension {dimension_id} links unknown requirements: {', '.join(unknown)}"
+                )
+            if linked and not any(req_id in must for req_id in linked):
+                reasons.append(f"Covered dimension {dimension_id} must link at least one MUST criterion")
+        if dimension_id not in goal_text or (rationale and rationale not in goal_text):
+            reasons.append(f"Acceptance dimension {dimension_id} and its rationale must appear in goal.md")
+
+    return {
+        "ok": not reasons,
+        "gate": "READY_FOR_APPROVAL" if not reasons else "REVISE_PLAN",
+        "reasons": reasons,
+        "must_acceptance_criteria": len(must),
+        "required_checks": len(required_checks),
+        "dimensions_assessed": len(ACCEPTANCE_DIMENSIONS & dimensions.keys()),
+        "dimensions_total": len(ACCEPTANCE_DIMENSIONS),
+    }
 
 
 def state_fingerprint(root: Path, state: dict[str, Any]) -> str:
@@ -292,6 +440,7 @@ def state_fingerprint(root: Path, state: dict[str, Any]) -> str:
         "requirements": state.get("requirements", {}),
         "checks": state.get("checks", {}),
         "risks": state.get("risks", {}),
+        "dimensions": state.get("dimensions", {}),
         "git_sha": current_git_sha(root),
         "product_status": product_status(root),
     }
@@ -363,6 +512,7 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
         "assurance": band,
         "confidence": "UNCALIBRATED",
         "must_requirement_coverage": coverage,
+        "acceptance_criteria_coverage": coverage,
         "required_check_coverage": check_coverage,
         "open_high_or_critical_risks": len(unresolved_serious),
         "open_risks": len(unresolved_risks),
@@ -370,6 +520,7 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
         "contradicted_requirements": len(contradicted),
         "failed_optional_checks": len(failed_optional),
         "must_total": len(must),
+        "acceptance_criteria_total": len(must),
         "must_verified_on_current_sha": len(fresh),
     }
 
@@ -402,7 +553,7 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
         result["reasons"] = ["Design is not approved"]
         return result
     if design_drift(directory, state):
-        result["reasons"] = ["Approved goal.md changed; run replan and obtain approval"]
+        result["reasons"] = ["Approved plan or acceptance contract changed; run replan and obtain approval"]
         return result
     requirements = state.get("requirements", {})
     must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
@@ -433,7 +584,7 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
     if incomplete or failing_checks or serious_risks:
         result["gate"] = "CONTINUE"
         if incomplete:
-            result["reasons"].append(f"MUST requirements need current evidence: {', '.join(incomplete)}")
+            result["reasons"].append(f"MUST acceptance criteria need current evidence: {', '.join(incomplete)}")
         if failing_checks:
             result["reasons"].append(f"Required checks need current PASS evidence: {', '.join(failing_checks)}")
         if serious_risks:
@@ -454,7 +605,7 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if directory.exists():
         raise GoalFlowError(f"Goal already exists: {goal_id}")
     directory.mkdir(parents=True)
-    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Requirements and verification\n\n| ID | Kind | Observable requirement | Verifier |\n| --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
+    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n| functional | TBD | TBD | TBD |\n| negative-boundary | TBD | TBD | TBD |\n| regression-compatibility | TBD | TBD | TBD |\n| security-privacy | TBD | TBD | TBD |\n| performance-reliability | TBD | TBD | TBD |\n| operations-observability | TBD | TBD | TBD |\n| migration-rollback | TBD | TBD | TBD |\n| documentation-deliverables | TBD | TBD | TBD |\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
     (directory / "evidence.md").write_text(
         f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
@@ -471,11 +622,12 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "approved_definitions_hash": None,
         "branch": current_branch(root),
         "current_milestone": "PLAN",
-        "next_action": "Complete goal.md and obtain explicit user approval",
+        "next_action": "Complete the evidence-backed plan and acceptance contract, then obtain approval",
         "wait_reason": "Design approval is required before implementation",
         "requirements": {},
         "checks": {},
         "risks": {},
+        "dimensions": {},
         "last_verified_commit": None,
         "no_progress_count": 0,
         "last_stop_fingerprint": None,
@@ -490,9 +642,19 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
 
 
 def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    if not args.goal_id:
+        path = active_file(root)
+        if not path.exists() or not load_json(path).get("goal_id"):
+            return {
+                "ok": True,
+                "active": False,
+                "message": "No active goal; run init to start one",
+                "git_sha": current_git_sha(root),
+            }
     goal_id, directory, state = load_state(root, args.goal_id)
-    return {
+    payload = {
         "ok": not validate_state(state),
+        "active": True,
         "goal_id": goal_id,
         "goal_dir": str(directory),
         "git_sha": current_git_sha(root),
@@ -500,35 +662,24 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "validation_errors": validate_state(state),
         "state": state,
     }
+    if not state.get("approved"):
+        payload["plan"] = plan_readiness(directory, state)
+    return payload
+
+
+def cmd_plan_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    goal_id, directory, state = load_state(root, args.goal_id)
+    result = plan_readiness(directory, state)
+    return {"goal_id": goal_id, **result}
 
 
 def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] not in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
         raise GoalFlowError(f"Cannot approve from {state['status']}")
-    if not any(item.get("kind") == "must" for item in state.get("requirements", {}).values()):
-        raise GoalFlowError("Register at least one MUST requirement before approval")
-    required_checks = {
-        key: value for key, value in state.get("checks", {}).items() if value.get("required")
-    }
-    if not required_checks:
-        raise GoalFlowError("Register at least one required PENDING check before approval")
-    for check_id, check in required_checks.items():
-        if not check.get("command"):
-            raise GoalFlowError(f"Required check {check_id} has no executable command")
-        if check.get("status") != "PENDING":
-            raise GoalFlowError(f"Required check {check_id} must be PENDING at approval")
-    for req_id, requirement in state.get("requirements", {}).items():
-        if requirement.get("kind") != "must":
-            continue
-        verifiers = requirement.get("verified_by") or []
-        if not verifiers:
-            raise GoalFlowError(f"MUST requirement {req_id} has no --verified-by check")
-        invalid = [check_id for check_id in verifiers if check_id not in required_checks]
-        if invalid:
-            raise GoalFlowError(
-                f"MUST requirement {req_id} references non-required checks: {', '.join(invalid)}"
-            )
+    readiness = plan_readiness(directory, state)
+    if not readiness["ok"]:
+        raise GoalFlowError("Plan is not approval-ready: " + "; ".join(readiness["reasons"]))
     if not args.user_approved:
         raise GoalFlowError("Explicit user approval is required; pass --user-approved only after it is given")
     state.update({
@@ -572,6 +723,9 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         verified_by = args.verified_by or prior.get("verified_by") or []
         statement = args.statement or prior.get("statement") or args.id
         kind = args.kind or prior.get("kind") or "must"
+        proves = args.proves or prior.get("proves")
+        failure_modes = args.failure_mode or prior.get("failure_modes") or []
+        basis = args.basis or prior.get("basis") or []
         if state.get("approved"):
             if not prior:
                 raise GoalFlowError("Approved requirement set is frozen; run replan before adding one")
@@ -579,6 +733,12 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
                 raise GoalFlowError("Approved requirement definitions are frozen; run replan to change them")
             if sorted(verified_by) != sorted(prior.get("verified_by") or []):
                 raise GoalFlowError("Approved requirement verifiers are frozen; run replan to change them")
+            if proves != prior.get("proves"):
+                raise GoalFlowError("Approved evidence scope is frozen; run replan to change it")
+            if sorted(failure_modes) != sorted(prior.get("failure_modes") or []):
+                raise GoalFlowError("Approved failure modes are frozen; run replan to change them")
+            if sorted(basis) != sorted(prior.get("basis") or []):
+                raise GoalFlowError("Approved acceptance basis is frozen; run replan to change it")
         if args.status == "VERIFIED":
             invalid = [
                 check_id for check_id in verified_by
@@ -593,6 +753,9 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "statement": statement,
             "kind": kind,
             "verified_by": verified_by,
+            "proves": proves,
+            "failure_modes": failure_modes,
+            "basis": basis,
             "status": args.status,
             "evidence": args.evidence,
             "git_sha": sha if args.status != "UNVERIFIED" else None,
@@ -604,6 +767,9 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "evidence": args.evidence,
             "Git SHA": state["requirements"][args.id]["git_sha"],
             "verified by": ", ".join(verified_by),
+            "what evidence proves": proves,
+            "failure modes": "; ".join(failure_modes),
+            "basis": "; ".join(basis),
             "residual risk": args.risk,
         })
     elif args.record_type == "check":
@@ -665,6 +831,34 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "evidence": args.evidence,
             "verified by": ", ".join(verified_by),
             "accepted by": state["risks"][args.id]["accepted_by"],
+        })
+    elif args.record_type == "dimension":
+        if state.get("approved"):
+            raise GoalFlowError("Approved acceptance dimensions are frozen; run replan to change them")
+        if args.id not in ACCEPTANCE_DIMENSIONS:
+            raise GoalFlowError(
+                "Unknown acceptance dimension; use one of: " + ", ".join(sorted(ACCEPTANCE_DIMENSIONS))
+            )
+        if args.status not in DIMENSION_STATUSES:
+            raise GoalFlowError("Dimension status must be COVERED or N_A")
+        if not substantive(args.rationale):
+            raise GoalFlowError("Acceptance dimensions need a substantive --rationale")
+        requirement_ids = args.requirement_id or []
+        if args.status == "COVERED" and not requirement_ids:
+            raise GoalFlowError("COVERED dimensions need at least one --requirement-id")
+        unknown = [req_id for req_id in requirement_ids if req_id not in state["requirements"]]
+        if unknown:
+            raise GoalFlowError(f"Unknown requirement IDs: {', '.join(unknown)}")
+        state["dimensions"][args.id] = {
+            "status": args.status,
+            "rationale": args.rationale,
+            "requirement_ids": requirement_ids,
+            "updated_at": now(),
+        }
+        append_evidence(directory, f"Acceptance dimension {args.id}", {
+            "status": args.status,
+            "rationale": args.rationale,
+            "criteria": ", ".join(requirement_ids),
         })
     else:
         append_evidence(directory, "Note", {"message": args.evidence or args.statement})
@@ -788,7 +982,7 @@ def cmd_replan(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "approved_design_hash": None,
         "approved_definitions_hash": None,
         "current_milestone": "PLAN",
-        "next_action": "Revise goal.md and obtain explicit approval",
+        "next_action": "Revise the plan and acceptance contract, then obtain explicit approval",
         "wait_reason": args.reason,
         "no_progress_count": 0,
         "stop_repeat_count": 0,
@@ -932,12 +1126,15 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--approved-by", default="user")
 
     record = sub.add_parser("record")
-    record.add_argument("record_type", choices=["requirement", "check", "risk", "note"])
+    record.add_argument("record_type", choices=["requirement", "check", "risk", "dimension", "note"])
     record.add_argument("--goal-id")
     record.add_argument("--id", default="NOTE")
     record.add_argument("--statement")
     record.add_argument("--kind", choices=["must", "should"])
     record.add_argument("--verified-by", action="append")
+    record.add_argument("--proves")
+    record.add_argument("--failure-mode", action="append")
+    record.add_argument("--basis", action="append")
     record.add_argument("--status")
     record.add_argument("--evidence")
     record.add_argument("--risk")
@@ -947,6 +1144,11 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--severity", choices=sorted(RISK_SEVERITIES))
     record.add_argument("--accepted-by")
     record.add_argument("--timeout", type=int, default=300)
+    record.add_argument("--rationale")
+    record.add_argument("--requirement-id", action="append")
+
+    plan_check = sub.add_parser("plan-check")
+    plan_check.add_argument("--goal-id")
 
     verify = sub.add_parser("verify")
     verify.add_argument("--goal-id")
@@ -999,6 +1201,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "init": cmd_init,
     "status": cmd_status,
+    "plan-check": cmd_plan_check,
     "approve": cmd_approve,
     "record": cmd_record,
     "verify": cmd_verify,

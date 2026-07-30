@@ -2,13 +2,14 @@
 
 ## Evidence rule
 
-Every completion claim must identify:
+Every acceptance-criterion claim must identify:
 
 - requirement ID
 - current goal revision
 - current Git SHA
 - exact verifier or observation
 - what the evidence proves
+- which planned negative or boundary cases were exercised
 - remaining counter-evidence or risk
 
 Use these statuses:

@@ -2,7 +2,7 @@
 
 ## Epoch rule
 
-Make each epoch answer one question: what is the largest delivery gap that can be closed and verified now?
+Make each epoch answer one question: what is the largest unsatisfied approved acceptance criterion that can be closed and verified now?
 
 An epoch ends as one of:
 
@@ -29,6 +29,8 @@ Execute frozen check definitions with `goalctl.py verify`; do not use `record ch
 ## Drift control
 
 At the start and end of every epoch compare the diff with the approved `goal.md`.
+
+Trace every implementation change to one or more approved acceptance criteria. Work that satisfies none is out of scope unless it is a necessary enabler recorded in the milestone.
 
 Replan when changing the core outcome, scope, architecture, public contract, quality threshold, risk, or authorization boundary. Local implementation choices that preserve those constraints do not require user interruption.
 

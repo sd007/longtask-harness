@@ -1,45 +1,70 @@
-# Planning Protocol
+# Planning and Acceptance Protocol
 
-Use this protocol before implementation.
+Complete this protocol before implementation. The plan and its acceptance contract define completion; implementation is only a means to satisfy them.
 
-## Required design content
+## Infer before asking
 
-Keep `goal.md` concise but decision-complete:
+Build the first complete proposal yourself:
 
-1. Outcome and non-goals.
-2. Repository and business context.
-3. Relevant official or industry sources, including version or retrieval date.
-4. Proposed design and meaningful alternatives.
-5. Public interfaces, data changes, compatibility, migration, and rollback.
-6. Security, performance, observability, and operational effects when relevant.
-7. `MUST` requirements with stable IDs.
-8. Verification method for every `MUST` requirement.
-9. Milestones and Git checkpoint boundaries.
-10. Assumptions, open questions, and authorization boundaries.
+1. Inspect `AGENTS.md`, code, tests, history, configuration, schemas, interfaces, and existing failures.
+2. Retrieve relevant official documentation and domain standards when repository evidence is insufficient.
+3. Infer implicit expectations from adjacent behavior: compatibility, error handling, security, reliability, operations, migration, rollback, and deliverables.
+4. Record each inference with its basis and expose material assumptions in `goal.md`.
+5. Ask the user only when the answer is a business preference, changes scope or public behavior, authorizes risk or irreversible action, or cannot be resolved from available evidence.
 
-## Discussion gate
+For unresolved questions, give a recommended default and its consequence. Batch only related, high-impact questions. Do not ask the user to discover repository facts Codex can inspect.
 
-Ask only questions that materially change the outcome or design. Resolve repository facts by inspection. Present tradeoffs with a recommendation. Continue until the user explicitly approves.
+## Make the plan decision-complete
 
-Treat approval as applying to one exact `goal.md` revision plus its registered requirement and check definitions. A later material change invalidates approval and requires `replan`.
+Include in `goal.md`:
 
-## Requirement quality
+1. Outcome, non-goals, and measurable quality bar.
+2. Repository, business, and domain context with sources or retrieval dates.
+3. Assumptions, decisions, alternatives, and why the recommendation wins.
+4. Interfaces, data changes, compatibility, security, performance, observability, migration, and rollback where applicable.
+5. Stable acceptance criteria and their exact verifier commands.
+6. Milestones and Git checkpoint boundaries.
+7. Remaining questions that genuinely require a user decision.
 
-Write requirements as observable outcomes, not activities:
+Never place secret values in `goal.md` or verifier commands. Refer to environment-variable names or credential mechanisms and request authorization only when execution actually needs them.
 
-- Good: `REQ-API-01: Retrying the same idempotency key creates at most one order.`
-- Bad: `Implement retry handling.`
+## Assess every acceptance dimension
 
-Classify requirements as `must` or `should`. Give each MUST requirement one or more named `verified_by` checks. Register every exact required check command while planning; because the controller will execute it later, the command and timeout are part of what the user approves. A MUST requirement must have direct, reproducible evidence on the tested implementation SHA before delivery.
+Record each dimension as `COVERED` with linked criterion IDs, or `N_A` with a substantive rationale:
 
-## Environment baseline
+- `functional`
+- `negative-boundary`
+- `regression-compatibility`
+- `security-privacy`
+- `performance-reliability`
+- `operations-observability`
+- `migration-rollback`
+- `documentation-deliverables`
 
-Before coding, determine:
+`N_A` means evidence shows the dimension is immaterial, not that it was forgotten.
 
-- Git branch, worktree, and existing user changes.
-- Runtime and dependency versions.
-- Build, test, lint, type-check, and end-to-end commands.
-- Required services, credentials, network access, and approvals.
-- Existing failing or flaky checks.
+## Write acceptance criteria, not activities
 
-Record baseline failures separately from regressions caused by the task.
+Every MUST criterion must include:
+
+- a stable ID and observable outcome
+- what the cited evidence will and will not prove
+- negative, boundary, recovery, or failure cases
+- repository, domain, official-source, or explicit-user basis
+- one or more required controller checks
+
+Good: `REQ-API-01: Retrying the same idempotency key creates at most one order.`
+
+Bad: `Implement retry handling.`
+
+Prefer black-box outcomes over implementation details. Include tolerances or thresholds in the observable outcome when they matter. A test name alone is not an acceptance criterion.
+
+## Run the planning gate
+
+Register the criteria, checks, and dimensions, then run `plan-check`. Resolve every reported gap yourself when evidence permits. Present the plan to the user only after it returns `READY_FOR_APPROVAL`.
+
+User approval freezes the exact `goal.md`, criteria definitions, evidence scope, failure modes, basis, dimension assessment, verifier mapping, and check commands. Any material change requires `replan` and new approval.
+
+## Baseline the environment
+
+Before coding, determine Git/worktree state, runtime and dependency versions, test commands, required services and permissions, and existing failing or flaky checks. Record baseline failures separately from task regressions.
