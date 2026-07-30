@@ -1,0 +1,15 @@
+{"event":"init","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":1,"status":"PLANNING","time":"2026-07-30T07:27:44Z"}
+{"event":"record_requirement","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":2,"status":"PLANNING","time":"2026-07-30T07:28:49Z"}
+{"event":"record_requirement","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":3,"status":"PLANNING","time":"2026-07-30T07:28:49Z"}
+{"event":"record_requirement","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":4,"status":"PLANNING","time":"2026-07-30T07:28:50Z"}
+{"event":"record_requirement","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":5,"status":"PLANNING","time":"2026-07-30T07:28:50Z"}
+{"event":"record_check","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":6,"status":"PLANNING","time":"2026-07-30T07:28:50Z"}
+{"event":"record_check","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":7,"status":"PLANNING","time":"2026-07-30T07:28:50Z"}
+{"event":"record_check","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":8,"status":"PLANNING","time":"2026-07-30T07:28:50Z"}
+{"event":"record_dimension","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":9,"status":"PLANNING","time":"2026-07-30T07:28:50Z"}
+{"event":"record_dimension","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":10,"status":"PLANNING","time":"2026-07-30T07:28:51Z"}
+{"event":"record_dimension","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":11,"status":"PLANNING","time":"2026-07-30T07:28:51Z"}
+{"event":"record_dimension","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":12,"status":"PLANNING","time":"2026-07-30T07:28:51Z"}
+{"event":"record_check","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"PLAN","revision":13,"status":"PLANNING","time":"2026-07-30T07:30:18Z"}
+{"event":"approve","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"M1","revision":14,"status":"EXECUTING","time":"2026-07-30T07:30:43Z"}
+{"event":"bind_worktree","git_sha":"bbdad2c99885e3f7b44ea597a6e7eba1c7516484","milestone":"M1","revision":15,"status":"EXECUTING","time":"2026-07-30T07:30:43Z"}
