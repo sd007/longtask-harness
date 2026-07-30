@@ -28,7 +28,7 @@ Goal Flow v0.2 聚焦单个 Codex、单个 Git 仓库、单个活动目标。方
 
 ## 快速开始
 
-1. 运行 `python3 goal-flow/scripts/install.py --yes`，再按[安装说明](docs/installation.md)信任 Hooks。
+1. 运行 `./install.sh`，再按[安装说明](docs/installation.md)信任 Hooks。
 2. 在目标 Git 仓库中新建 Codex 任务。
 3. 输入：`使用 $goal-flow 完成 <你的长任务>`。
 4. 与 Codex 完善 `goal.md`，明确回复批准方案。

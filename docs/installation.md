@@ -1,6 +1,6 @@
 # 安装、更新与卸载
 
-Goal Flow 提供个人 marketplace 的一键管理脚本。脚本会保留 marketplace 中的其他插件，安装失败时自动回滚。
+Goal Flow 提供真正的一键管理脚本。普通用户不需要了解 Python、插件路径、marketplace 或 Codex CLI 参数。脚本会保留 marketplace 中的其他插件，安装失败时自动回滚。
 
 ## 一键安装
 
@@ -9,7 +9,7 @@ Goal Flow 提供个人 marketplace 的一键管理脚本。脚本会保留 marke
 在本仓库根目录执行：
 
 ```bash
-python3 goal-flow/scripts/install.py --yes
+./install.sh
 ```
 
 脚本会自动：
@@ -22,30 +22,36 @@ python3 goal-flow/scripts/install.py --yes
 
 安装后只需重启 Codex、新建任务，然后在 `/hooks` 中审查并信任 `SessionStart` 和 `Stop`。Hook 信任不能自动跳过，这是安全边界。
 
-## 先预览再安装
+这是普通安装需要执行的唯一命令。脚本会自动确认操作并调用内部安全安装器。
+
+## 先预览再安装（可选）
 
 ```bash
-python3 goal-flow/scripts/install.py --dry-run
+./install.sh --dry-run
 ```
-
-不带 `--yes` 时，脚本会展示操作并等待确认。
 
 ## 一键更新
 
 取得新版源码后，重新运行：
 
 ```bash
-python3 goal-flow/scripts/install.py --yes
+./install.sh
 ```
 
 脚本会替换旧插件、更新 cachebuster 并重新安装。Hook 内容变化时需要重新信任；请用新任务加载新版 Skill。
 
 ## 一键卸载
 
-可以从源码目录运行，也可以直接使用已安装副本：
+保留源码目录时，在仓库根目录运行：
 
 ```bash
-python3 ~/plugins/goal-flow/scripts/uninstall.py --yes
+./uninstall.sh
+```
+
+如果源码目录已经删除，可以运行安装副本自带的卸载脚本：
+
+```bash
+~/plugins/goal-flow/uninstall.sh
 ```
 
 卸载会从 Codex 和个人 marketplace 移除 Goal Flow。插件目录默认移动到 `~/.Trash`，没有该目录时移动到 `~/.goal-flow-uninstalled`。所有项目里的 `.goal-flow/` 目标、状态和证据都会保留。
@@ -53,7 +59,7 @@ python3 ~/plugins/goal-flow/scripts/uninstall.py --yes
 确定不需要恢复插件文件时可以永久删除：
 
 ```bash
-python3 ~/plugins/goal-flow/scripts/uninstall.py --yes --purge
+./uninstall.sh --purge
 ```
 
 ## 常见问题

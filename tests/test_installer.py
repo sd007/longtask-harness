@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / "goal-flow" / "scripts" / "install.py"
 UNINSTALL = ROOT / "goal-flow" / "scripts" / "uninstall.py"
+INSTALL_WRAPPER = ROOT / "install.sh"
+UNINSTALL_WRAPPER = ROOT / "uninstall.sh"
 
 
 class InstallerTests(unittest.TestCase):
@@ -60,6 +62,42 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.home / "plugins" / "goal-flow").exists())
         self.assertEqual(self.marketplace(), before)
+
+    def test_one_command_wrappers_install_and_uninstall(self) -> None:
+        self.assertTrue(os.access(INSTALL_WRAPPER, os.X_OK))
+        self.assertTrue(os.access(UNINSTALL_WRAPPER, os.X_OK))
+        installed = subprocess.run(
+            [str(INSTALL_WRAPPER), "--home", str(self.home), "--no-codex"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        plugin = self.home / "plugins" / "goal-flow"
+        self.assertTrue((plugin / "install.sh").exists())
+        self.assertTrue((plugin / "uninstall.sh").exists())
+
+        removed = subprocess.run(
+            [str(UNINSTALL_WRAPPER), "--home", str(self.home), "--no-codex"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(plugin.exists())
+
+    def test_installed_plugin_can_uninstall_itself(self) -> None:
+        installed = subprocess.run(
+            [str(INSTALL_WRAPPER), "--home", str(self.home), "--no-codex"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        plugin = self.home / "plugins" / "goal-flow"
+        installed_uninstaller = plugin / "uninstall.sh"
+        self.assertTrue(os.access(installed_uninstaller, os.X_OK))
+
+        removed = subprocess.run(
+            [str(installed_uninstaller), "--home", str(self.home), "--no-codex"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(plugin.exists())
 
     def test_uninstall_preserves_other_entries_and_is_recoverable(self) -> None:
         self.assertEqual(self.run_script(INSTALL, "--yes").returncode, 0)
