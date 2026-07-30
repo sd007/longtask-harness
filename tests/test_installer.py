@@ -6,10 +6,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "goal-flow" / "scripts"))
+import plugin_manager  # noqa: E402
+
+
 INSTALL = ROOT / "goal-flow" / "scripts" / "install.py"
 UNINSTALL = ROOT / "goal-flow" / "scripts" / "uninstall.py"
 INSTALL_WRAPPER = ROOT / "install.sh"
@@ -62,6 +68,18 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.home / "plugins" / "goal-flow").exists())
         self.assertEqual(self.marketplace(), before)
+
+    def test_interactive_install_offers_codex_hook_setup(self) -> None:
+        args = Namespace(setup_hooks=True, no_hooks=False, no_codex=False)
+        with (
+            patch.object(plugin_manager.sys.stdin, "isatty", return_value=True),
+            patch.object(plugin_manager.sys.stdout, "isatty", return_value=True),
+            patch("builtins.input", return_value="y"),
+            patch("plugin_manager.subprocess.run") as run,
+        ):
+            run.return_value.returncode = 0
+            plugin_manager.offer_hook_setup(args)
+        run.assert_called_once_with(["codex"], cwd=Path.cwd(), check=False)
 
     def test_one_command_wrappers_install_and_uninstall(self) -> None:
         self.assertTrue(os.access(INSTALL_WRAPPER, os.X_OK))

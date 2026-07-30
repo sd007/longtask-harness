@@ -120,6 +120,37 @@ def confirm(message: str, assume_yes: bool) -> None:
         raise InstallError("Cancelled; no changes were made")
 
 
+def offer_hook_setup(args: argparse.Namespace) -> None:
+    """Offer an interactive Codex session for the user-owned hook trust step."""
+    if (
+        not getattr(args, "setup_hooks", False)
+        or getattr(args, "no_hooks", False)
+        or getattr(args, "no_codex", False)
+    ):
+        return
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print("Hook setup deferred: run codex, then type /hooks in the Codex CLI.")
+        return
+    print(
+        "\nGoal Flow needs you to review and trust the SessionStart and Stop hooks.\n"
+        "The installer cannot click Trust for you; it will open the Codex CLI now."
+    )
+    response = input("Open Codex CLI for hook setup now? [Y/n] ").strip().lower()
+    if response not in {"", "y", "yes"}:
+        print("Hook setup skipped. Later run `codex`, then type `/hooks`.")
+        return
+    print("Opening Codex CLI. In Codex, type `/hooks`, review both Goal Flow hooks, and choose Trust.")
+    try:
+        result = subprocess.run(["codex"], cwd=Path.cwd(), check=False)
+    except KeyboardInterrupt:
+        print("\nHook setup interrupted. Run `codex`, then type `/hooks` when ready.")
+        return
+    if result.returncode == 0:
+        print("Codex CLI closed. Start a new Codex task after both hooks show as trusted.")
+    else:
+        print(f"Codex CLI exited with status {result.returncode}. Hook setup may still be incomplete.")
+
+
 def install(args: argparse.Namespace) -> int:
     home = Path(args.home).expanduser().resolve()
     destination, marketplace_path = personal_paths(home)
@@ -175,7 +206,9 @@ def install(args: argparse.Namespace) -> int:
             shutil.rmtree(staging.parent)
 
     print("Goal Flow installed successfully.")
-    print("Next: restart Codex, open /hooks and trust the two Goal Flow hooks, then start a new task.")
+    if not getattr(args, "setup_hooks", False):
+        print("Next: run `codex`, type `/hooks`, trust the two Goal Flow hooks, then start a new task.")
+    offer_hook_setup(args)
     return 0
 
 
@@ -233,6 +266,9 @@ def build_parser(action: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=f"{action.title()} Goal Flow")
     parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt")
     parser.add_argument("--dry-run", action="store_true", help="Show actions without changing files")
+    if action == "install":
+        parser.add_argument("--setup-hooks", action="store_true", help=argparse.SUPPRESS)
+        parser.add_argument("--no-hooks", action="store_true", help="Skip the interactive Hook setup prompt")
     parser.add_argument("--home", default=str(Path.home()), help=argparse.SUPPRESS)
     parser.add_argument("--no-codex", action="store_true", help=argparse.SUPPRESS)
     if action == "uninstall":

@@ -8,4 +8,4 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 2
 fi
 
-exec python3 "$SCRIPT_DIR/scripts/install.py" --yes "$@"
+exec python3 "$SCRIPT_DIR/scripts/install.py" --yes --setup-hooks "$@"

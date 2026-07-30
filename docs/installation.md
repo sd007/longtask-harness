@@ -22,12 +22,20 @@ Goal Flow 提供真正的一键管理脚本。普通用户不需要了解 Python
 
 安装后只需重启 Codex、新建任务，然后在 `/hooks` 中审查并信任 `SessionStart` 和 `Stop`。Hook 信任不能自动跳过，这是安全边界。
 
-这是普通安装需要执行的唯一命令。脚本会自动确认操作并调用内部安全安装器。
+这是普通安装需要执行的唯一命令。脚本会自动确认操作并调用内部安全安装器。安装完成后，脚本会询问是否立即打开 Codex CLI；选择确认后，在打开的 Codex CLI 中输入 `/hooks`，分别审查并信任 `SessionStart` 和 `Stop`。脚本不能替用户点击 Trust，这是 Codex 的安全边界。
+
+如果你跳过了这一步，之后运行 `codex`，再输入 `/hooks` 即可补做。桌面端输入框不显示 `/hooks` 菜单时，请使用终端里的 Codex CLI 完成一次信任。
 
 ## 先预览再安装（可选）
 
 ```bash
 ./install.sh --dry-run
+```
+
+非交互环境或不想打开 Codex 时，可以跳过引导：
+
+```bash
+./install.sh --no-hooks
 ```
 
 ## 一键更新
