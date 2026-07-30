@@ -35,7 +35,7 @@ class GoalCtlTests(unittest.TestCase):
         (self.repo / "README.md").write_text("fixture\n", encoding="utf-8")
         self.git("add", "README.md")
         self.git("commit", "-qm", "initial")
-        self.ctl("init", "--goal-id", "test-goal", "--title", "Test Goal", "--goal", "Ship it")
+        self.ctl("init", "--goal-id", "test-goal", "--title", "Test Goal", "--goal", "Ship it", "--mode", "goal-flow")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -87,12 +87,57 @@ class GoalCtlTests(unittest.TestCase):
 
     def test_project_context_is_scaffolded_and_readable(self) -> None:
         context_path = self.repo / ".goal-flow" / "context.md"
-        self.assertTrue(context_path.exists())
+        self.assertFalse(context_path.exists())
+        created = self.ctl("context", "--init")
+        self.assertTrue(created["created"])
         loaded = self.ctl("context")
         self.assertTrue(loaded["exists"])
         self.assertIn("Goal Flow project context", loaded["excerpt"])
         existing = self.ctl("context", "--init")
         self.assertFalse(existing["created"])
+
+    def test_micro_mode_does_not_initialize_full_goal_flow(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        denied = self.ctl(
+            "init", "--goal-id", "micro-goal", "--title", "Micro", "--goal", "Fix one typo",
+            "--mode", "micro", expected=2,
+        )
+        self.assertIn("do not initialize Goal Flow", denied["error"])
+        self.assertFalse((self.repo / ".goal-flow" / "micro-goal").exists())
+
+    def test_standard_mode_supports_implicit_approval_and_current_worktree(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "standard-goal", "--title", "Standard", "--goal", "Ship a small change",
+            "--mode", "standard",
+        )
+        self.write_complete_goal_for("standard-goal")
+        self.ctl("record", "check", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("standard-goal")
+        self.register_dimensions_for("standard-goal")
+        approved = self.ctl("approve", "--goal-id", "standard-goal", "--auto-approved", "--next-action", "Implement standard task")
+        self.assertEqual(approved["state"]["approval_mode"], "implicit-standard")
+        binding = self.ctl("bind-worktree", "--goal-id", "standard-goal")
+        self.assertTrue(binding["skipped"])
+        self.assertIsNone(binding["state"]["worktree_binding"])
+
+    def test_standard_gate_completes_without_final_acceptance_button(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "standard-goal", "--title", "Standard", "--goal", "Ship a small change",
+            "--mode", "standard",
+        )
+        self.write_complete_goal_for("standard-goal")
+        self.ctl("record", "check", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("standard-goal")
+        self.register_dimensions_for("standard-goal")
+        self.ctl("approve", "--goal-id", "standard-goal", "--auto-approved", "--next-action", "Implement standard task")
+        self.commit_product()
+        self.ctl("verify", "--goal-id", "standard-goal", "--id", "TEST")
+        self.record_complete_evidence(self.git("rev-parse", "HEAD"))
+        completed = self.ctl("gate", "--goal-id", "standard-goal", "--apply")
+        self.assertEqual(completed["gate"], "ACCEPTED")
+        self.assertFalse(self.ctl("status")["active"])
 
     def test_behavior_change_scaffolds_harness_delta_and_tasks(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
@@ -199,6 +244,11 @@ class GoalCtlTests(unittest.TestCase):
         self.assertNotIn('"active"', result.stdout)
 
     def test_bind_worktree_requires_approval_and_rejects_wrong_branch(self) -> None:
+        state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["harness"]["mode"] = "goal-flow"
+        state["harness"]["requested_mode"] = "goal-flow"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
         denied = self.ctl("bind-worktree", expected=2)
         self.assertIn("Approve", denied["error"])
         self.register_and_approve()

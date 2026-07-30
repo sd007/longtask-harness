@@ -59,7 +59,7 @@ class HookTests(unittest.TestCase):
 
     def test_session_start_is_silent_without_goal_and_restores_active_goal(self) -> None:
         self.assertEqual(self.hook(SESSION_HOOK), {})
-        self.ctl("init", "--goal-id", "hook-goal", "--title", "Hook Goal", "--goal", "Test hooks")
+        self.ctl("init", "--goal-id", "hook-goal", "--title", "Hook Goal", "--goal", "Test hooks", "--mode", "goal-flow")
         payload = self.hook(SESSION_HOOK)
         context = payload["hookSpecificOutput"]["additionalContext"]
         self.assertIn("Goal=hook-goal", context)
@@ -69,7 +69,7 @@ class HookTests(unittest.TestCase):
         self.assertLessEqual(len(context), 1150)
 
     def test_stop_continues_execution_but_not_planning_or_repeated_stall(self) -> None:
-        self.ctl("init", "--goal-id", "hook-goal", "--title", "Hook Goal", "--goal", "Test hooks")
+        self.ctl("init", "--goal-id", "hook-goal", "--title", "Hook Goal", "--goal", "Test hooks", "--mode", "goal-flow")
         self.assertEqual(self.hook(STOP_HOOK), {})
         goal = self.repo / ".goal-flow" / "hook-goal" / "goal.md"
         dimension_lines = []

@@ -41,7 +41,7 @@ def main() -> int:
         print("{}")
         return 0
     context = (
-        "Goal Flow is active. Resume it before starting unrelated work. "
+        "A Goal Flow goal is active. Resume it when this task is related; otherwise pause or switch context before unrelated work. "
         f"Goal={payload['goal_id']}; profile={payload.get('profile')}; "
         f"harness={payload.get('harness', {}).get('mode', 'goal-flow')}; "
         f"status={payload['status']}; "

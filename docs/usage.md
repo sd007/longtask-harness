@@ -23,9 +23,9 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 
 Codex 首先自行调查仓库、既有规范、历史、相关领域知识和官方资料，并据此补全隐含目标。批准前一定会展示“决策检查”：已自动确定、建议默认、仍需用户决定。只有最后一项包含无法从证据判断且会改变业务结果、质量阈值或授权边界的问题时才询问你，并给出推荐默认值和后果；如果为空，会明确说明没有高影响未决项。
 
-默认使用 `standard` profile，登记功能、边界、兼容和文档交付四个核心验收维度；安全、迁移、生产可靠性或其他高风险任务使用 `strict`，登记全部八维。每条 MUST 标准都必须说明可观察结果、证据范围、失败模式、依据和实际检查。`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。在你明确批准前，Codex 不能修改实现代码；批准会冻结 profile、方案、验收标准、质量维度判断和检查定义。
+默认使用 `standard` profile；轻量 Standard 只登记功能维度，完整 Goal Flow Standard 再登记边界、兼容和文档交付，高风险任务使用 `strict` 并登记全部八维。每条 MUST 标准都必须说明可观察结果、证据范围、失败模式、依据和实际检查。`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。轻量 Standard 在没有高影响问题时可隐式批准，完整 Goal Flow 仍会冻结方案、验收标准和检查定义。
 
-完整 Goal Flow 批准时，会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件。`micro` 任务不创建完整审计目标，`standard` 任务只有在出现高影响未决项或需要跨 epoch 自主执行时才升级为按钮审批。
+完整 Goal Flow 批准时，会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件。`micro` 任务不创建完整审计目标，`standard` 任务在没有高影响未决项时使用内部隐式批准，不弹按钮；出现高影响问题、跨 epoch 自主执行或高风险边界时才升级为显式审批。
 
 ```text
 例如：“按这个方案执行。”
@@ -33,7 +33,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 ## 自动执行阶段
 
-批准后，Codex 在实现分支执行 `bind-worktree`，再以小型 epoch 循环工作：感知当前状态、选择最大的未满足验收标准、实施、提交实现、由控制器执行已批准检查、记录标准证据、提交审计记录、运行 Gate。提交说明默认跟随当前对话语言，仓库已有规范优先；中文任务会使用中文描述并保留 `feat:`、`fix:` 等类型前缀。绑定防止同一目标从错误仓库、worktree 或分支继续；检查回执包含真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
+批准后，完整 Goal Flow 在实现分支执行 `bind-worktree`，再以小型 epoch 循环工作。Standard 任务可以留在当前干净工作树，不需要单独的审计基线提交。提交说明默认跟随当前对话语言，仓库已有规范优先；检查回执包含真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
 
 日常只需要关注两类打断：
 
@@ -77,7 +77,7 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 
 ## 最终审查与验收
 
-Gate 只有在以下条件同时满足时才进入 `READY_FOR_ACCEPTANCE`：
+完整 Goal Flow 的 Gate 只有在以下条件同时满足时才进入 `READY_FOR_ACCEPTANCE`；Standard 通过同样的硬门槛后直接完成目标：
 
 - 方案仍与批准时哈希一致；
 - 每个 MUST 验收标准都有新鲜的 `VERIFIED` 证据，并绑定控制器实际执行通过的检查；

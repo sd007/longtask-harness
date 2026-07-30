@@ -1,6 +1,6 @@
 {
   "name": "goal-flow",
-  "version": "0.6.0+codex.20260730083000",
+  "version": "0.7.0+codex.20260730084500",
   "description": "Plan, execute, verify, and deliver long software tasks with evidence-backed gates.",
   "author": {
     "name": "Local developer"
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Goal Flow",
-    "shortDescription": "Adaptive task harnesses with recovery guidance",
-    "longDescription": "A lightweight Codex-native workflow that classifies task shape and risk, chooses a task-sized harness, tracks behavior changes, restores compact project context, and provides evidence-backed recovery guidance and approvals.",
+    "shortDescription": "Lean task harnesses with safe escalation",
+    "longDescription": "A lightweight Codex-native workflow that keeps micro and standard tasks lean, escalates high-risk work to explicit approvals and evidence-backed gates, and retains behavior traceability for meaningful changes.",
     "developerName": "Local developer",
     "category": "Productivity",
     "brandColor": "#4F46E5",

@@ -54,6 +54,7 @@ STANDARD_DIMENSIONS = {
     "regression-compatibility",
     "documentation-deliverables",
 }
+LIGHTWEIGHT_STANDARD_DIMENSIONS = {"functional"}
 PLACEHOLDER_MARKERS = {
     "to be defined during planning",
     "define during planning",
@@ -404,6 +405,8 @@ def current_worktree_identity(root: Path) -> dict[str, str]:
 def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
     if not state.get("approved"):
         return
+    if state.get("harness", {}).get("mode") == "standard":
+        return
     binding = state.get("worktree_binding")
     if not binding:
         raise GoalFlowError("Approved goal is not bound; run bind-worktree on its implementation branch")
@@ -553,6 +556,23 @@ def substantive(value: str | None) -> bool:
         return False
     lowered = value.strip().lower()
     return not any(marker in lowered for marker in PLACEHOLDER_MARKERS)
+
+
+def has_open_user_questions(text: str) -> bool:
+    match = re.search(
+        r"^##\s+Questions requiring user decision\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        text,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    if not match:
+        return False
+    for line in match.group(1).splitlines():
+        value = line.strip().lstrip("- ").strip()
+        if not value or value.lower() in {"none", "none after repository inspection.", "no unresolved questions."}:
+            continue
+        if substantive(value):
+            return True
+    return False
 
 
 def valid_check_command(value: str | None) -> bool:
@@ -813,9 +833,12 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
 
     dimensions = state.get("dimensions", {})
     profile = state.get("profile", "strict")
+    harness_mode = state.get("harness", {}).get("mode", "goal-flow")
     required_dimensions = (
         ACCEPTANCE_DIMENSIONS if profile == "strict" else STANDARD_DIMENSIONS
     )
+    if profile != "strict" and harness_mode == "standard":
+        required_dimensions = LIGHTWEIGHT_STANDARD_DIMENSIONS
     missing_dimensions = sorted(required_dimensions - dimensions.keys())
     if missing_dimensions:
         reasons.append(f"Unassessed acceptance dimensions: {', '.join(missing_dimensions)}")
@@ -1054,6 +1077,8 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     directory = goal_dir(root, goal_id)
     if directory.exists():
         raise GoalFlowError(f"Goal already exists: {goal_id}")
+    if args.mode == "micro":
+        raise GoalFlowError("Micro tasks do not initialize Goal Flow; use the lightweight plan and direct verification path")
     directory.mkdir(parents=True)
     dimension_order = [
         "functional", "negative-boundary", "regression-compatibility",
@@ -1076,7 +1101,10 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     required_dimensions = (
         dimension_order
         if profile == "strict"
-        else [item for item in dimension_order if item in STANDARD_DIMENSIONS]
+        else [
+            item for item in dimension_order
+            if item in (STANDARD_DIMENSIONS if mode == "goal-flow" else LIGHTWEIGHT_STANDARD_DIMENSIONS)
+        ]
     )
     dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
     goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
@@ -1095,8 +1123,6 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
         encoding="utf-8",
     )
-    if not context_path(root).exists():
-        context_path(root).write_text(context_template(), encoding="utf-8")
     if behavior_change:
         (directory / "delta.md").write_text(
             """# Behavior Delta
@@ -1528,6 +1554,8 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot bind immutable goal {state['status']}")
+    if state.get("harness", {}).get("mode") == "standard":
+        return {"ok": True, "skipped": True, "message": "Standard Harness uses the current worktree", "state": state}
     if not state.get("approved"):
         raise GoalFlowError("Approve the design before binding its implementation worktree")
     if not product_tree_is_clean(root):
@@ -1547,7 +1575,16 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     readiness = plan_readiness(directory, state)
     if not readiness["ok"]:
         raise GoalFlowError("Plan is not approval-ready: " + "; ".join(readiness["reasons"]))
-    if not args.user_approved:
+    auto_approved = bool(args.auto_approved)
+    if auto_approved:
+        if state.get("harness", {}).get("mode") != "standard":
+            raise GoalFlowError("Automatic approval is only available for the standard Harness")
+        if state.get("profile") == "strict" or state.get("harness", {}).get("risk_level") in {"high", "critical"}:
+            raise GoalFlowError("Strict or high-risk goals require explicit user approval")
+        goal_text = (directory / "goal.md").read_text(encoding="utf-8")
+        if has_open_user_questions(goal_text):
+            raise GoalFlowError("Open high-impact user questions require explicit approval")
+    if not args.user_approved and not auto_approved:
         raise GoalFlowError("Explicit user approval is required; pass --user-approved only after it is given")
     state.update({
         "approved": True,
@@ -1559,7 +1596,8 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "wait_reason": None,
         "no_progress_count": 0,
         "stop_repeat_count": 0,
-        "approved_by": args.approved_by,
+        "approved_by": args.approved_by if args.user_approved else "standard-auto",
+        "approval_mode": "explicit" if args.user_approved else "implicit-standard",
     })
     save_state(directory, state)
     append_evidence(directory, "Design approved", {
@@ -1568,6 +1606,7 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "definitions hash": state["approved_definitions_hash"],
         "next action": state["next_action"],
         "approved by": state["approved_by"],
+        "approval mode": state["approval_mode"],
     })
     return {"ok": True, "message": "Design approved", "state": state}
 
@@ -2010,6 +2049,26 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             state["wait_reason"] = result["reasons"][0]
             result["status"] = state["status"]
         save_state(directory, state)
+    if (
+        args.apply
+        and result["gate"] == "READY_FOR_REVIEW"
+        and state.get("harness", {}).get("mode") == "standard"
+    ):
+        state["status"] = "ACCEPTED"
+        state["next_action"] = None
+        state["last_verified_commit"] = result["git_sha"]
+        state["approval_mode"] = state.get("approval_mode") or "implicit-standard"
+        save_state(directory, state)
+        append_evidence(directory, "Standard delivery completed", {
+            "status": "ACCEPTED",
+            "mode": "implicit-standard",
+            "Git SHA": result["git_sha"],
+        })
+        deactivate_goal(root, state["goal_id"])
+        result["gate"] = "ACCEPTED"
+        result["status"] = "ACCEPTED"
+        result["message"] = "Standard Harness delivery completed"
+        return result
     if args.apply and result["gate"] == "READY_FOR_REVIEW" and state["status"] != "READY_FOR_ACCEPTANCE":
         state["status"] = "READY_FOR_ACCEPTANCE"
         state["next_action"] = result["next_action"]
@@ -2097,6 +2156,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--milestone")
     approve.add_argument("--next-action", required=True)
     approve.add_argument("--user-approved", action="store_true")
+    approve.add_argument("--auto-approved", action="store_true")
     approve.add_argument("--approved-by", default="user")
 
     record = sub.add_parser("record")

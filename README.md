@@ -24,9 +24,9 @@ flowchart LR
 
 ## 设计边界
 
-Goal Flow v0.6 聚焦单个 Codex、单个 Git 仓库、单个活动目标。任务先按规模、风险和验证难度选择 `micro`、`standard` 或完整 `goal-flow` Harness；失败检查会给出分类和下一策略，项目级 `.goal-flow/context.md` 用于低成本恢复上下文。行为变化目标可生成 OpenSpec 风格的 `delta.md`、`tasks.md` 和 Given/When/Then 场景，并通过 `goalctl review` 做需求、任务、场景和证据追踪。它不会引入全局规格库、外部 Runner、数据库、Web UI 或复杂事件系统。
+Goal Flow v0.7 聚焦单个 Codex、单个 Git 仓库、单个活动目标。`micro` 不初始化控制器，`standard` 使用轻量计划、可隐式批准并可留在当前工作树，只有完整 `goal-flow` 才启用显式审批、隔离分支和完整审计；任务仍按规模、风险和验证难度选择 Harness。失败检查会给出分类和下一策略，项目级 `.goal-flow/context.md` 按需启用以降低重复扫描成本。行为变化目标可生成 OpenSpec 风格的 `delta.md`、`tasks.md` 和 Given/When/Then 场景，并通过 `goalctl review` 做需求、任务、场景和证据追踪。
 
-批准后用 `bind-worktree` 把目标绑定到规范化仓库、Git 目录和分支；文件锁与 revision CAS 防止并发写丢失。v0.5 继承 v0.4 的 MCP 审批服务，在完整 Harness 的方案和最终交付节点通过标准 elicitation 生成可点击控件，并保留无控件环境下的自然语言降级。验证超时会清理整个进程组，并记录不含环境变量值的运行环境指纹。
+批准后，完整 Goal Flow 才用 `bind-worktree` 绑定规范化仓库、Git 目录和分支；文件锁与 revision CAS 防止并发写丢失。v0.7 继承 MCP 审批服务，在完整 Harness 的方案和最终交付节点通过标准 elicitation 生成可点击控件；Standard 任务可留在当前干净工作树并使用隐式批准。验证超时会清理整个进程组，并记录不含环境变量值的运行环境指纹。
 
 ## 快速开始
 
@@ -40,4 +40,4 @@ Goal Flow v0.6 聚焦单个 Codex、单个 Git 仓库、单个活动目标。任
 
 ## 项目状态
 
-当前版本是 `0.6.0`。它不是生产级形式化验证器；外部系统真实性、验收标准本身是否正确以及用户授权仍属于信任边界。
+当前版本是 `0.7.0`。它不是生产级形式化验证器；外部系统真实性、验收标准本身是否正确以及用户授权仍属于信任边界。

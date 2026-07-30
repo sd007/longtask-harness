@@ -6,7 +6,7 @@ Goal Flow 不依赖 Agent 自报“已完成”。Skill 先根据任务规模、
 
 ## 自适应 Harness
 
-`micro` 只保留目标、范围和验证命令；`standard` 增加验收、风险、停止条件和回滚；`goal-flow` 才建立完整状态机、审批、epoch、证据和最终验收。`classify` 根据文件数、步骤数、风险、行为变化、跨会话和自主执行需求推荐最小安全 Harness。`profile` 仍只表示验收严格程度，`mode` 表示流程深度，避免把小任务误套成长任务审计。
+`micro` 不初始化控制器，只保留目标、范围和验证命令；`standard` 使用轻量验收、可隐式批准并可留在当前工作树；`goal-flow` 才建立完整状态机、显式审批、epoch、证据和最终验收。`classify` 根据文件数、步骤数、风险、行为变化、跨会话和自主执行需求推荐最小安全 Harness。`profile` 仍只表示验收严格程度，`mode` 表示流程深度，避免把小任务误套成长任务审计。
 
 ## 项目上下文与失败恢复
 
@@ -18,17 +18,17 @@ Goal Flow 不依赖 Agent 自报“已完成”。Skill 先根据任务规模、
 
 ## 状态模型
 
-规划与等待状态不会触发自动续跑；`EXECUTING` 和 `VERIFYING` 允许 Gate 返回 `CONTINUE`；硬门槛满足后进入 `READY_FOR_ACCEPTANCE`；只有用户明确确认才进入 `ACCEPTED`。
+规划与等待状态不会触发自动续跑；`EXECUTING` 和 `VERIFYING` 允许 Gate 返回 `CONTINUE`；完整 Goal Flow 的硬门槛满足后进入 `READY_FOR_ACCEPTANCE`，只有用户明确确认才进入 `ACCEPTED`；Standard 通过同样硬门槛后直接完成并停用目标。
 
 需要改变批准基线时必须 `replan`。统一合同哈希覆盖 `goal.md`、profile、验收标准、证据范围、失败模式、依据来源、所需质量维度、标准到检查的映射以及检查命令；任何批准后的静默改写都会触发漂移，Gate 立即停止自动推进。旧目标缺少 profile 时按 `strict` 解释，保持原有八维合同。
 
 ## 轻量 profile
 
-`standard` 是日常默认值，只强制评估 `functional`、`negative-boundary`、`regression-compatibility` 和 `documentation-deliverables`。涉及安全、数据迁移、性能 SLO、生产运维或不可逆操作时使用 `strict`，补齐全部八维。两种 profile 都保留 MUST/SHOULD、证据范围、失败模式、依据、显式批准和最终验收，不以降低硬门槛换取轻量。
+`standard` 是日常默认值，轻量 Harness 只强制评估 `functional`；完整 `goal-flow` 的 standard profile 再评估边界、兼容和交付物四个维度。涉及安全、数据迁移、性能 SLO、生产运维或不可逆操作时使用 `strict`，补齐全部八维。两种 profile 都保留 MUST/SHOULD、证据范围、失败模式、依据和最终验收，但只有完整 Goal Flow 强制显式批准。
 
 ## 状态一致性与执行边界
 
-控制器用 `.goal-flow/controller.lock` 的文件锁串行化读写，用递增 `state_revision` 做 compare-and-swap，避免并发更新静默覆盖。批准后的目标必须先执行 `bind-worktree`；后续实现、验证与验收只允许在相同规范化仓库根目录、Git 目录和分支上推进。
+控制器用 `.goal-flow/controller.lock` 的文件锁串行化读写，用递增 `state_revision` 做 compare-and-swap，避免并发更新静默覆盖。完整 Goal Flow 批准后的目标必须先执行 `bind-worktree`；Standard 任务可在当前干净工作树推进。
 
 ## Assurance 而非伪概率
 
@@ -57,8 +57,8 @@ Goal Flow 不依赖 Agent 自报“已完成”。Skill 先根据任务规模、
 
 ## 信任边界
 
-v0.6 能降低遗漏、漂移、早停、并发写丢失和无证据结论，并把审批交互从文本约定提升为宿主可渲染的 MCP elicitation；但不能证明：验收标准本身正确、外部服务陈述真实、测试覆盖了未知缺陷，或被授予文件写权限的恶意执行者不会同时篡改状态与哈希。因此状态与审计记录用于约束合作型 Agent、发现幻觉和支持复盘，不是防篡改账本；Hook 是工程护栏，不是安全沙箱。最终用户验收和 Codex 权限模型仍然有效。
+v0.7 能降低遗漏、漂移、早停、并发写丢失和无证据结论，同时减少普通任务的审批、分支和审计开销；但不能证明：验收标准本身正确、外部服务陈述真实、测试覆盖了未知缺陷，或被授予文件写权限的恶意执行者不会同时篡改状态与哈希。因此状态与审计记录用于约束合作型 Agent、发现幻觉和支持复盘，不是防篡改账本；Hook 是工程护栏，不是安全沙箱。最终用户验收和 Codex 权限模型仍然有效。
 
 ## 未来扩展条件
 
-只有观测到实际瓶颈后再扩展：多目标并发需要独立活动索引；多 Agent 需要租约与单写者协议；CI/远端运行需要签名证据和重放；概率置信度需要历史基准集、结果标签、Brier score 或可靠性曲线。它们不进入轻量 v0.6。
+只有观测到实际瓶颈后再扩展：多目标并发需要独立活动索引；多 Agent 需要租约与单写者协议；CI/远端运行需要签名证据和重放；概率置信度需要历史基准集、结果标签、Brier score 或可靠性曲线。它们不进入轻量 v0.7。
