@@ -10,3 +10,13 @@
 {"event":"record_requirement","git_sha":"89c8a7fe286a28d95a2aff38e24a6c5a81677a73","milestone":"M4","revision":12,"status":"EXECUTING","time":"2026-07-30T07:12:09Z"}
 {"event":"record_requirement","git_sha":"89c8a7fe286a28d95a2aff38e24a6c5a81677a73","milestone":"M4","revision":13,"status":"EXECUTING","time":"2026-07-30T07:12:09Z"}
 {"event":"gate","git_sha":"89c8a7fe286a28d95a2aff38e24a6c5a81677a73","milestone":"M4","result":"READY_FOR_REVIEW","revision":14,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:12:10Z"}
+{"check":"TESTS","duration_ms":26523,"event":"verify","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","result":"PASS","revision":15,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:35Z"}
+{"check":"COMPILE","duration_ms":33,"event":"verify","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","result":"PASS","revision":16,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:36Z"}
+{"check":"DOCS","duration_ms":25,"event":"verify","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","result":"PASS","revision":17,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:36Z"}
+{"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":18,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:48Z"}
+{"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":19,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:48Z"}
+{"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":20,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:48Z"}
+{"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":21,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
+{"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":22,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
+{"event":"record_requirement","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","revision":23,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
+{"event":"gate","git_sha":"ae88ccb4fdcd2946e34641ec3641754db4eda706","milestone":"M4","result":"READY_FOR_REVIEW","revision":23,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:14:49Z"}
