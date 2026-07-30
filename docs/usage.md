@@ -50,7 +50,7 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project report
 ```
 
-`summary` 适合日常查看和 SessionStart 恢复；`report --json` 适合工具消费，文本 `report` 适合最终复盘。报告包含最小时间线、验证尝试/失败、需求与检查覆盖、残余风险；旧目标没有 `events.jsonl` 时仍可读取。
+`summary` 适合日常查看和 SessionStart 恢复；恢复时先使用摘要和 `report --json`，只有缺少细节或诊断失败时才读取完整 `state.json`、`evidence.md`，避免每轮重复消耗整个审计历史。文本 `report` 适合最终复盘，包含最小时间线、验证尝试/失败、需求与检查覆盖、残余风险；旧目标没有 `events.jsonl` 时仍可读取。
 
 ## 暂停、恢复和变更方案
 

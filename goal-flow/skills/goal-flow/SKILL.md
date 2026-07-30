@@ -25,8 +25,8 @@ Do not edit `state.json` directly. Use the controller.
 
 ## Start or resume
 
-1. Run `status`.
-2. If `active` is true, read its `goal.md`, `state.json`, `evidence.md`, and current Git state. Resume the recorded `next_action`.
+1. Reuse the bounded SessionStart summary when present; otherwise run `summary --json`.
+2. If `active` is true, read its approved `goal.md` and current Git state, then resume the recorded `next_action`. Use `report --json` for coverage and recent history. Read full `state.json` or `evidence.md` only when a missing detail or failure diagnosis requires it; do not preload the whole audit history on every session.
 3. If `active` is false, run `init --goal-id <slug> --title <title> --goal <outcome>`. The default `standard` profile fits ordinary repository work; pass `--profile strict` for security, migration, production reliability, irreversible operations, or other high-risk work.
 4. Read [planning.md](references/planning.md) completely and conduct the design phase.
 
@@ -57,7 +57,7 @@ Before presenting the final plan for approval:
 
 Read [execution.md](references/execution.md) before coding. Repeat:
 
-1. **Sense:** Read the approved goal revision, state, evidence, Git diff, and fresh tool output.
+1. **Sense:** Use `summary` and `report` plus the approved goal, Git diff, and fresh tool output. Read full state or evidence only when the compact views do not contain a required detail.
 2. **Select:** Choose the largest currently verifiable delivery gap.
 3. **Act:** Implement one bounded milestone without unrelated refactoring.
 4. **Preflight:** Run targeted checks directly, inspect the diff, and test negative paths while the implementation is still editable.
