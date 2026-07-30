@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Goal Flow</title>
+  <desc id="desc">A reliable flow from a goal through verified steps to completion.</desc>
+  <defs>
+    <linearGradient id="flow" x1="116" y1="132" x2="382" y2="382" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="0.55" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#A7F3D0"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="#0B1020"/>
+  <path d="M128 156h92c22 0 40 18 40 40v94c0 22 18 40 40 40h84" fill="none" stroke="#172554" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M128 156h92c22 0 40 18 40 40v94c0 22 18 40 40 40h84" fill="none" stroke="url(#flow)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)"/>
+
+  <circle cx="128" cy="156" r="34" fill="#111827" stroke="#67E8F9" stroke-width="12"/>
+  <circle cx="128" cy="156" r="11" fill="#67E8F9"/>
+  <circle cx="260" cy="236" r="34" fill="#111827" stroke="#60A5FA" stroke-width="12"/>
+  <circle cx="260" cy="236" r="11" fill="#60A5FA"/>
+
+  <circle cx="384" cy="330" r="55" fill="#102A2A" stroke="#A7F3D0" stroke-width="12"/>
+  <path d="m357 330 18 18 37-42" fill="none" stroke="#A7F3D0" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
