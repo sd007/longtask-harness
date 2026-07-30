@@ -252,7 +252,7 @@ def classify_harness(
         },
         "reasons": reasons,
         "harness": {
-            "plan": "lightweight" if mode == "micro" else "structured",
+            "plan": "lightweight" if mode in {"micro", "standard"} else "structured",
             "approval": "required" if mode == "goal-flow" else "conditional",
             "evidence": "strict" if profile == "strict" else "standard",
             "resume": mode == "goal-flow",
@@ -274,7 +274,12 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def active_goal_id(root: Path, explicit: str | None = None) -> str:
-    goal_id = explicit or str(load_json(active_file(root)).get("goal_id") or "")
+    if explicit:
+        goal_id = explicit
+    elif not active_file(root).exists():
+        return ""
+    else:
+        goal_id = str(load_json(active_file(root)).get("goal_id") or "")
     if goal_id and not SLUG_RE.fullmatch(goal_id):
         raise GoalFlowError("Invalid goal-id in request or active.json")
     return goal_id
@@ -329,6 +334,80 @@ def deactivate_goal(root: Path, goal_id: str) -> None:
             "last_goal_id": goal_id,
             "updated_at": now(),
         })
+
+
+def is_lightweight_standard(state: dict[str, Any]) -> bool:
+    """Return whether the goal uses the day-to-day Standard path."""
+    return (
+        state.get("profile") == "standard"
+        and state.get("harness", {}).get("mode") == "standard"
+    )
+
+
+def standard_auto_completion_allowed(state: dict[str, Any]) -> bool:
+    """Only silently complete low-risk, non-public-behavior Standard work."""
+    return (
+        is_lightweight_standard(state)
+        and not state.get("harness", {}).get("behavior_change")
+        and state.get("harness", {}).get("risk_level") in {"unspecified", "low"}
+    )
+
+
+def compact_harness(state: dict[str, Any]) -> dict[str, Any]:
+    """Expose only resolved harness facts in user-facing summaries."""
+    harness = state.get("harness", {})
+    return {
+        key: harness.get(key)
+        for key in ("mode", "task_type", "risk_level", "behavior_change")
+        if key in harness
+    }
+
+
+def product_worktree_fingerprint(root: Path) -> str:
+    """Hash product changes, excluding Goal Flow's own audit files."""
+    digest = hashlib.sha256()
+    status = product_status(root) or ""
+    digest.update(status.encode("utf-8"))
+    digest.update(b"\0")
+    pathspec = [".", ":(exclude).goal-flow", ":(exclude).goal-flow/**"]
+    for prefix, command in (("unstaged", ["diff"]), ("staged", ["diff", "--cached"])):
+        result = subprocess.run(
+            ["git", *command, "--binary", "--", *pathspec],
+            cwd=root,
+            text=False,
+            capture_output=True,
+            check=False,
+        )
+        digest.update(prefix.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(result.stdout)
+        digest.update(b"\0")
+    untracked = run_git(root, "ls-files", "--others", "--exclude-standard") or ""
+    for relative in sorted(
+        path for path in untracked.splitlines()
+        if path != ".goal-flow" and not path.startswith(".goal-flow/")
+    ):
+        path = root / relative
+        if not path.is_file():
+            continue
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            digest.update(b"<unreadable>")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def product_tree_is_acceptable(root: Path, state: dict[str, Any]) -> bool:
+    """Allow Standard's pre-existing dirty baseline, but detect new drift."""
+    if not is_lightweight_standard(state):
+        return product_tree_is_clean(root)
+    baseline = state.get("harness", {}).get("baseline_product_fingerprint")
+    if not baseline:
+        return product_tree_is_clean(root)
+    return product_worktree_fingerprint(root) == baseline or product_tree_is_clean(root)
 
 
 def file_hash(path: Path) -> str:
@@ -405,7 +484,7 @@ def current_worktree_identity(root: Path) -> dict[str, str]:
 def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
     if not state.get("approved"):
         return
-    if state.get("harness", {}).get("mode") == "standard":
+    if is_lightweight_standard(state):
         return
     binding = state.get("worktree_binding")
     if not binding:
@@ -452,9 +531,19 @@ def product_tree_is_clean(root: Path) -> bool:
     return product_status(root) == ""
 
 
-def evidence_is_fresh(root: Path, evidence_sha: str | None) -> bool:
-    """Evidence stays fresh across audit-only commits, but not product changes."""
-    if not evidence_sha or evidence_sha == "UNBORN" or not product_tree_is_clean(root):
+def evidence_is_fresh(
+    root: Path,
+    evidence_sha: str | None,
+    state: dict[str, Any] | None = None,
+) -> bool:
+    """Evidence stays fresh across audit-only commits and Standard baselines."""
+    if not evidence_sha or evidence_sha == "UNBORN":
+        return False
+    if state is None:
+        clean = product_tree_is_clean(root)
+    else:
+        clean = product_tree_is_acceptable(root, state)
+    if not clean:
         return False
     if run_git(root, "merge-base", "--is-ancestor", evidence_sha, "HEAD") is None:
         return False
@@ -475,7 +564,7 @@ def verifiers_are_fresh(root: Path, state: dict[str, Any], check_ids: list[str])
     return bool(check_ids) and all(
         check_id in state.get("checks", {})
         and state["checks"][check_id].get("status") == "PASS"
-        and evidence_is_fresh(root, state["checks"][check_id].get("git_sha"))
+        and evidence_is_fresh(root, state["checks"][check_id].get("git_sha"), state)
         for check_id in check_ids
     )
 
@@ -793,9 +882,23 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         if check_id not in goal_text or str(check.get("command")) not in goal_text:
             reasons.append(f"Required check {check_id} and its exact command must appear in goal.md")
 
+    lightweight_standard = is_lightweight_standard(state)
     for req_id, criterion in must.items():
         if not substantive(criterion.get("statement")):
             reasons.append(f"MUST criterion {req_id} lacks an observable outcome")
+        if lightweight_standard:
+            verifiers = criterion.get("verified_by") or []
+            if not verifiers:
+                reasons.append(f"MUST criterion {req_id} has no --verified-by check")
+            invalid = [check_id for check_id in verifiers if check_id not in required_checks]
+            if invalid:
+                reasons.append(
+                    f"MUST criterion {req_id} references non-required checks: {', '.join(invalid)}"
+                )
+            for value in (req_id, criterion.get("statement")):
+                if value and str(value) not in goal_text:
+                    reasons.append(f"MUST criterion {req_id} detail is not visible in goal.md: {value}")
+            continue
         if not substantive(criterion.get("proves")):
             reasons.append(f"MUST criterion {req_id} must state what its evidence proves")
         if not criterion.get("failure_modes") or not all(
@@ -871,7 +974,7 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         "profile": profile,
         "dimensions_assessed": len(required_dimensions & dimensions.keys()),
         "dimensions_total": len(required_dimensions),
-        "harness": state.get("harness", {}),
+        "harness": compact_harness(state),
     }
 
 
@@ -930,11 +1033,11 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
     requirements = state.get("requirements", {})
     must = [item for item in requirements.values() if item.get("kind") == "must"]
     verified = [item for item in must if item.get("status") == "VERIFIED"]
-    fresh = [item for item in verified if evidence_is_fresh(root, item.get("git_sha"))]
+    fresh = [item for item in verified if evidence_is_fresh(root, item.get("git_sha"), state)]
     required_checks = [item for item in state.get("checks", {}).values() if item.get("required")]
     passing_checks = [
         item for item in required_checks
-        if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"))
+        if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"), state)
     ]
     coverage = round(100 * len(fresh) / len(must)) if must else 0
     check_coverage = round(100 * len(passing_checks) / len(required_checks)) if required_checks else 0
@@ -1035,7 +1138,7 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
         return result
     incomplete = [
         key for key, value in must.items()
-        if value.get("status") != "VERIFIED" or not evidence_is_fresh(root, value.get("git_sha"))
+        if value.get("status") != "VERIFIED" or not evidence_is_fresh(root, value.get("git_sha"), state)
     ]
     checks = state.get("checks", {})
     required_checks = {
@@ -1047,7 +1150,7 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
         return result
     failing_checks = [
         key for key, value in required_checks.items()
-        if value.get("status") != "PASS" or not evidence_is_fresh(root, value.get("git_sha"))
+        if value.get("status") != "PASS" or not evidence_is_fresh(root, value.get("git_sha"), state)
     ]
     serious_risks = [
         key for key, value in state.get("risks", {}).items()
@@ -1079,6 +1182,26 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         raise GoalFlowError(f"Goal already exists: {goal_id}")
     if args.mode == "micro":
         raise GoalFlowError("Micro tasks do not initialize Goal Flow; use the lightweight plan and direct verification path")
+    active_id = active_goal_id(root)
+    if active_id and active_id != goal_id:
+        active_directory = goal_dir(root, active_id)
+        active_state_path = active_directory / "state.json"
+        if not active_state_path.exists():
+            raise GoalFlowError(
+                f"Active goal {active_id!r} has no state.json; repair or clear active.json before starting another goal"
+            )
+        active_state = load_json(active_state_path)
+        active_status = active_state.get("status")
+        if active_status not in {"ACCEPTED", "CANCELLED"}:
+            if not args.switch_active:
+                raise GoalFlowError(
+                    f"Active goal {active_id!r} is {active_status}; pause/cancel it or pass --switch to make {goal_id!r} active"
+                )
+            active_state["resume_status"] = active_status
+            active_state["status"] = "PAUSED"
+            active_state["wait_reason"] = f"Switched to new goal {goal_id}"
+            save_state(active_directory, active_state)
+    baseline_product_fingerprint = product_worktree_fingerprint(root)
     directory.mkdir(parents=True)
     dimension_order = [
         "functional", "negative-boundary", "regression-compatibility",
@@ -1167,8 +1290,8 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
             "task_type": args.task_type,
             "risk_level": args.risk_level,
             "behavior_change": behavior_change,
-            "evidence_level": "strict" if profile == "strict" else "standard",
-            "classification": classification,
+            "baseline_product_fingerprint": baseline_product_fingerprint,
+            "classification_reasons": classification["reasons"],
         },
         "contract_version": 2,
         "state_revision": 0,
@@ -1323,7 +1446,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
     verified = [
         item for item in must
         if item.get("status") == "VERIFIED"
-        and evidence_is_fresh(root, item.get("git_sha"))
+        and evidence_is_fresh(root, item.get("git_sha"), state)
     ]
     failed_checks = sorted(
         (
@@ -1346,7 +1469,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         "goal_id": goal_id,
         "title": state.get("title") or goal_id,
         "profile": state.get("profile", "strict"),
-        "harness": state.get("harness", {}),
+        "harness": compact_harness(state),
         "context_excerpt": context_excerpt(root),
         "status": state.get("status"),
         "must_verified": len(verified),
@@ -1403,7 +1526,7 @@ def build_report(
             "id": requirement_id,
             "kind": item.get("kind"),
             "status": item.get("status"),
-            "fresh": evidence_is_fresh(root, item.get("git_sha")),
+            "fresh": evidence_is_fresh(root, item.get("git_sha"), state),
         }
         for requirement_id, item in sorted(state.get("requirements", {}).items())
     ]
@@ -1412,7 +1535,7 @@ def build_report(
             "id": check_id,
             "required": bool(item.get("required")),
             "status": item.get("status"),
-            "fresh": evidence_is_fresh(root, item.get("git_sha")),
+            "fresh": evidence_is_fresh(root, item.get("git_sha"), state),
             "duration_ms": item.get("duration_ms"),
             "timed_out": bool(item.get("timed_out")),
             "termination": item.get("termination"),
@@ -1554,7 +1677,7 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot bind immutable goal {state['status']}")
-    if state.get("harness", {}).get("mode") == "standard":
+    if is_lightweight_standard(state):
         return {"ok": True, "skipped": True, "message": "Standard Harness uses the current worktree", "state": state}
     if not state.get("approved"):
         raise GoalFlowError("Approve the design before binding its implementation worktree")
@@ -1652,7 +1775,7 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
                 check_id for check_id in verified_by
                 if check_id not in state.get("checks", {})
                 or state["checks"][check_id].get("status") != "PASS"
-                or not evidence_is_fresh(root, state["checks"][check_id].get("git_sha"))
+                or not evidence_is_fresh(root, state["checks"][check_id].get("git_sha"), state)
             ]
             if not verified_by or invalid:
                 suffix = f": {', '.join(invalid)}" if invalid else ""
@@ -1867,7 +1990,11 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         raise GoalFlowError(f"Check {args.id} has no approved command")
     if state.get("approved") and design_drift(directory, state):
         raise GoalFlowError("Approved definitions changed; run replan before verification")
-    if not product_tree_is_clean(root):
+    if not product_tree_is_acceptable(root, state):
+        if is_lightweight_standard(state):
+            raise GoalFlowError(
+                "Standard detected product changes beyond its initialization baseline; commit or restore them before verification"
+            )
         raise GoalFlowError("Commit or clean product-tree changes before running a bound check")
     sha = current_git_sha(root)
     if sha == "UNBORN":
@@ -1877,14 +2004,14 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     returncode = execution["returncode"]
     output = execution["output"]
     failure_class, recommended_action = classify_failure(execution)
-    clean_after = product_tree_is_clean(root)
+    clean_after = product_tree_is_acceptable(root, state)
     status = "PASS" if returncode == 0 and clean_after else "FAIL"
     summary_parts = [f"exit={returncode}"]
     if execution["timed_out"]:
         summary_parts.append(f"timed out after {timeout}s")
         summary_parts.append(f"terminated with {execution['termination']}")
     if not clean_after:
-        summary_parts.append("command changed the product tree")
+        summary_parts.append("command changed the product tree or Standard baseline")
     if output:
         summary_parts.append(output[-4000:])
     summary = " | ".join(summary_parts)
@@ -2052,7 +2179,7 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if (
         args.apply
         and result["gate"] == "READY_FOR_REVIEW"
-        and state.get("harness", {}).get("mode") == "standard"
+        and standard_auto_completion_allowed(state)
     ):
         state["status"] = "ACCEPTED"
         state["next_action"] = None
@@ -2136,6 +2263,12 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--steps", type=int, default=1)
     init.add_argument("--cross-session", action="store_true")
     init.add_argument("--autonomous", action="store_true")
+    init.add_argument(
+        "--switch",
+        dest="switch_active",
+        action="store_true",
+        help="pause the current active goal before making this goal active",
+    )
 
     status = sub.add_parser("status")
     status.add_argument("--goal-id")

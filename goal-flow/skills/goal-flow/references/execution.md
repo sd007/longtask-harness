@@ -19,7 +19,7 @@ Do not repeat a failed strategy without new evidence. Use `--progress` only when
 - Prefer one writer per worktree.
 - Use subagents for bounded research, test design, and independent review; treat their output as unverified.
 - Commit approved design before implementation.
-- Run preflight checks, then commit a coherent implementation candidate so controller-generated receipts can bind to its SHA.
+- Run preflight checks, then commit a coherent implementation candidate so controller-generated receipts can bind to its SHA. Standard may retain unrelated initialization-baseline edits, but must not introduce additional uncommitted product changes before verification.
 - Write commit subjects in the current conversation language unless the repository has an explicit commit-language convention. Preserve an existing Conventional Commit prefix such as `feat:` or `fix:` and localize the descriptive text; do not silently default a Chinese task to an English sentence.
 - If a frozen check fails, fix the defect and create a new implementation commit; never attach the old PASS to the new tree.
 - Inspect the diff before every commit.

@@ -1,6 +1,6 @@
 # Planning and Acceptance Protocol
 
-Complete this protocol before implementation. The plan and its acceptance contract define completion; implementation is only a means to satisfy them.
+Complete the appropriate depth of this protocol before implementation. Full Goal Flow and strict tasks use the complete contract; lightweight Standard tasks use the reduced contract described below.
 
 ## Infer before asking
 
@@ -44,7 +44,7 @@ Never place secret values in `goal.md` or verifier commands. Refer to environmen
 
 Use the lightweight `standard` Harness for normal day-to-day repository work and `strict` when security, migration, production reliability, irreversible actions, or similarly costly failure modes are material. Full `goal-flow` keeps explicit approval and the complete evidence contract; lightweight standard work may use implicit approval when no high-impact question remains.
 
-For lightweight `standard`, assess `functional`; full `goal-flow` standard additionally assesses the other three core dimensions. For `strict`, continue through the full list. Record each required dimension as `COVERED` with linked criterion IDs, or `N_A` with a substantive rationale:
+For lightweight `standard`, assess `functional`, define one observable MUST criterion, and register one required controller check. Its MUST needs an outcome and a verifier, but not a full evidence-scope, failure-mode, or basis narrative unless the task makes those material. Full `goal-flow` standard additionally assesses the other three core dimensions. For `strict`, continue through the full list. Record each required dimension as `COVERED` with linked criterion IDs, or `N_A` with a substantive rationale:
 
 - `functional`
 - `negative-boundary`

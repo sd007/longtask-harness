@@ -19,7 +19,7 @@ Use these statuses:
 - `UNVERIFIED`: no sufficient current evidence exists.
 - `CONTRADICTED`: current evidence shows the requirement is not met.
 
-Check evidence must be a controller-generated execution receipt, not an Agent-authored PASS statement. A VERIFIED requirement must reference its approved passing checks. Evidence is bound to the tested implementation SHA. Later commits may update only `.goal-flow/` audit files; any other change makes the evidence stale and requires checks to be rerun.
+Check evidence must be a controller-generated execution receipt, not an Agent-authored PASS statement. A VERIFIED requirement must reference its approved passing checks. Evidence is bound to the tested implementation SHA. Later commits may update only `.goal-flow/` audit files; any other change makes the evidence stale and requires checks to be rerun. Lightweight Standard additionally protects its initialization product fingerprint, so pre-existing dirty files may remain but newly introduced drift does not pass verification.
 
 ## Verification ladder
 

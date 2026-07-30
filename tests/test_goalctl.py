@@ -105,6 +105,125 @@ class GoalCtlTests(unittest.TestCase):
         self.assertIn("do not initialize Goal Flow", denied["error"])
         self.assertFalse((self.repo / ".goal-flow" / "micro-goal").exists())
 
+    def test_init_does_not_silently_replace_active_goal(self) -> None:
+        denied = self.ctl(
+            "init", "--goal-id", "second-goal", "--title", "Second", "--goal", "Another task", expected=2,
+        )
+        self.assertIn("pass --switch", denied["error"])
+        self.assertEqual(self.ctl("status")["goal_id"], "test-goal")
+        switched = self.ctl(
+            "init", "--goal-id", "second-goal", "--title", "Second", "--goal", "Another task", "--switch",
+        )
+        self.assertEqual(switched["state"]["goal_id"], "second-goal")
+        old_state = json.loads((self.repo / ".goal-flow" / "test-goal" / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(old_state["status"], "PAUSED")
+        self.assertIn("Switched to new goal", old_state["wait_reason"])
+
+    def test_standard_plan_check_uses_reduced_contract(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "light-standard", "--title", "Light Standard", "--goal", "Ship one small change",
+            "--mode", "standard",
+        )
+        goal = self.repo / ".goal-flow" / "light-standard" / "goal.md"
+        goal.write_text(
+            """# Light Standard
+
+## Outcome
+feature.txt exists with expected content.
+
+## Questions requiring user decision
+- None after repository inspection.
+
+## Acceptance dimensions
+- functional: COVERED; The observable file outcome is checked; REQ-001
+
+## Acceptance criteria
+REQ-001 | MUST | feature.txt exists with expected content
+
+Required check TEST: test -f feature.txt
+""",
+            encoding="utf-8",
+        )
+        self.ctl("record", "check", "--goal-id", "light-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.ctl(
+            "record", "requirement", "--goal-id", "light-standard", "--id", "REQ-001", "--kind", "must",
+            "--status", "UNVERIFIED", "--statement", "feature.txt exists with expected content", "--verified-by", "TEST",
+        )
+        self.ctl(
+            "record", "dimension", "--goal-id", "light-standard", "--id", "functional", "--status", "COVERED",
+            "--rationale", "The observable file outcome is checked", "--requirement-id", "REQ-001",
+        )
+        ready = self.ctl("plan-check", "--goal-id", "light-standard")
+        self.assertEqual(ready["gate"], "READY_FOR_APPROVAL")
+        self.assertEqual(ready["dimensions_total"], 1)
+
+    def test_standard_preserves_dirty_baseline_but_rejects_new_drift(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        (self.repo / "preexisting.txt").write_text("user work\n", encoding="utf-8")
+        self.ctl(
+            "init", "--goal-id", "baseline-standard", "--title", "Baseline", "--goal", "Ship a small change",
+            "--mode", "standard",
+        )
+        self.write_complete_goal_for("baseline-standard")
+        self.ctl("record", "check", "--goal-id", "baseline-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("baseline-standard")
+        self.ctl(
+            "record", "dimension", "--goal-id", "baseline-standard", "--id", "functional", "--status", "COVERED",
+            "--rationale", "functional is covered by the observable acceptance criterion", "--requirement-id", "REQ-001",
+        )
+        self.ctl("approve", "--goal-id", "baseline-standard", "--auto-approved", "--next-action", "Implement baseline task")
+        self.commit_product()
+        (self.repo / "new-drift.txt").write_text("unexpected\n", encoding="utf-8")
+        denied = self.ctl("verify", "--goal-id", "baseline-standard", "--id", "TEST", expected=2)
+        self.assertIn("beyond its initialization baseline", denied["error"])
+        (self.repo / "new-drift.txt").unlink()
+        self.assertEqual(self.ctl("verify", "--goal-id", "baseline-standard", "--id", "TEST")["status"], "PASS")
+
+    def test_standard_behavior_change_keeps_final_acceptance(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "behavior-standard", "--title", "Behavior Standard", "--goal", "Change behavior",
+            "--mode", "standard", "--behavior-change",
+        )
+        self.write_complete_goal_for("behavior-standard")
+        behavior_dir = self.repo / ".goal-flow" / "behavior-standard"
+        (behavior_dir / "delta.md").write_text(
+            """# Behavior Delta
+
+## ADDED
+
+### REQ-001: Observable feature
+
+#### SCN-001 (REQ-001): Feature succeeds
+
+- GIVEN the repository is ready
+- WHEN the feature is invoked
+- THEN the expected result is returned
+
+## MODIFIED
+## REMOVED
+""",
+            encoding="utf-8",
+        )
+        (behavior_dir / "tasks.md").write_text(
+            "- [ ] T-001 (REQ-001, SCN-001): Implement and verify the feature\n",
+            encoding="utf-8",
+        )
+        self.ctl("record", "check", "--goal-id", "behavior-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("behavior-standard")
+        self.ctl(
+            "record", "dimension", "--goal-id", "behavior-standard", "--id", "functional", "--status", "COVERED",
+            "--rationale", "functional is covered by the observable acceptance criterion", "--requirement-id", "REQ-001",
+        )
+        self.ctl("approve", "--goal-id", "behavior-standard", "--auto-approved", "--next-action", "Implement behavior task")
+        sha = self.commit_product()
+        self.record_complete_evidence(sha)
+        ready = self.ctl("gate", "--goal-id", "behavior-standard", "--apply")
+        self.assertEqual(ready["status"], "READY_FOR_ACCEPTANCE")
+        accepted = self.ctl("accept", "--goal-id", "behavior-standard", "--user-accepted", "--accepted-by", "test-user")
+        self.assertEqual(accepted["state"]["status"], "ACCEPTED")
+
     def test_standard_mode_supports_implicit_approval_and_current_worktree(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
         self.ctl(
@@ -120,6 +239,22 @@ class GoalCtlTests(unittest.TestCase):
         binding = self.ctl("bind-worktree", "--goal-id", "standard-goal")
         self.assertTrue(binding["skipped"])
         self.assertIsNone(binding["state"]["worktree_binding"])
+
+    def test_strict_profile_never_uses_lightweight_standard_shortcuts(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "strict-standard", "--title", "Strict Standard", "--goal", "Ship a risky change",
+            "--mode", "standard", "--profile", "strict",
+        )
+        self.write_complete_goal_for("strict-standard")
+        self.ctl("record", "check", "--goal-id", "strict-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("strict-standard")
+        self.register_dimensions_for("strict-standard")
+        approved = self.ctl("approve", "--goal-id", "strict-standard", "--user-approved", "--next-action", "Implement strict task")
+        self.assertEqual(approved["state"]["profile"], "strict")
+        binding = self.ctl("bind-worktree", "--goal-id", "strict-standard")
+        self.assertFalse(binding.get("skipped", False))
+        self.assertIsNotNone(binding["state"]["worktree_binding"])
 
     def test_standard_gate_completes_without_final_acceptance_button(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
