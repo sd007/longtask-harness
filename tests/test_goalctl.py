@@ -367,6 +367,9 @@ Required check TEST: {check_command}
         self.register_and_approve()
         sha = self.commit_product()
         self.record_complete_evidence(sha)
+        # Controller receipts leave audit files dirty; they must not invalidate
+        # evidence or prevent another verifier from starting.
+        self.assertEqual(self.ctl("verify", "--id", "TEST")["status"], "PASS")
         ready = self.ctl("gate", "--apply")
         self.assertEqual(ready["gate"], "READY_FOR_REVIEW")
         self.assertEqual(ready["status"], "READY_FOR_ACCEPTANCE")

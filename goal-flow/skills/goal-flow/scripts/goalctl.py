@@ -298,9 +298,18 @@ def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
 
 def product_status(root: Path) -> str | None:
     """Return porcelain status excluding Goal Flow audit files."""
-    output = run_git(root, "status", "--porcelain", "--untracked-files=all")
-    if output is None:
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
         return None
+    # Keep the leading XY status columns; generic run_git() strips them from
+    # the first line and can turn an audit-only path into a false product edit.
+    output = result.stdout.rstrip("\n")
     product_lines: list[str] = []
     for line in output.splitlines():
         path = line[3:].strip()
