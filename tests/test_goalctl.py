@@ -59,6 +59,61 @@ class GoalCtlTests(unittest.TestCase):
         self.assertFalse(payload["active"])
         self.assertIn("No active goal", payload["message"])
 
+    def test_profiles_default_to_standard_and_legacy_goals_remain_strict(self) -> None:
+        self.assertEqual(self.ctl("status")["state"]["profile"], "standard")
+        state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state.pop("profile")
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        self.assertEqual(self.ctl("status")["state"]["profile"], "strict")
+
+    def test_standard_requires_core_dimensions_but_strict_requires_all(self) -> None:
+        self.write_complete_goal()
+        self.ctl(
+            "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+            "--command", "test -f feature.txt",
+        )
+        self.register_requirement()
+        for dimension in [
+            "functional", "negative-boundary", "regression-compatibility",
+            "documentation-deliverables",
+        ]:
+            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+                self.ctl(
+                    "record", "dimension", "--id", dimension, "--status", "COVERED",
+                    "--rationale", f"{dimension} is covered by the observable acceptance criterion",
+                    "--requirement-id", "REQ-001",
+                )
+            else:
+                self.ctl(
+                    "record", "dimension", "--id", dimension, "--status", "N_A",
+                    "--rationale", f"{dimension} has no material impact for this isolated file fixture",
+                )
+        standard = self.ctl("plan-check")
+        self.assertEqual(standard["gate"], "READY_FOR_APPROVAL")
+        self.assertEqual(standard["dimensions_total"], 4)
+
+        state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["profile"] = "strict"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        strict = self.ctl("plan-check", expected=1)
+        self.assertEqual(strict["gate"], "REVISE_PLAN")
+        self.assertIn("security-privacy", " ".join(strict["reasons"]))
+
+    def test_summary_has_human_and_json_views(self) -> None:
+        payload = self.ctl("summary", "--json")
+        self.assertEqual(payload["profile"], "standard")
+        self.assertEqual(payload["must_total"], 0)
+        self.assertIn("Next:", payload["text"])
+        result = subprocess.run(
+            [sys.executable, str(CLI), "--root", str(self.repo), "summary"],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Goal: Test Goal", result.stdout)
+        self.assertNotIn('"active"', result.stdout)
+
     def write_complete_goal(self, check_command: str = "test -f feature.txt") -> None:
         goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
         dimension_lines = []
@@ -246,7 +301,7 @@ Required check TEST: {check_command}
         self.prepare_plan()
         ready = self.ctl("plan-check")
         self.assertEqual(ready["gate"], "READY_FOR_APPROVAL")
-        self.assertEqual(ready["dimensions_assessed"], 8)
+        self.assertEqual(ready["dimensions_assessed"], 4)
 
     def test_plan_check_rejects_machine_only_acceptance_details(self) -> None:
         self.prepare_plan()

@@ -63,7 +63,10 @@ class HookTests(unittest.TestCase):
         payload = self.hook(SESSION_HOOK)
         context = payload["hookSpecificOutput"]["additionalContext"]
         self.assertIn("Goal=hook-goal", context)
+        self.assertIn("profile=standard", context)
         self.assertIn("status=PLANNING", context)
+        self.assertIn("progress=0/0 MUST", context)
+        self.assertLessEqual(len(context), 1150)
 
     def test_stop_continues_execution_but_not_planning_or_repeated_stall(self) -> None:
         self.ctl("init", "--goal-id", "hook-goal", "--title", "Hook Goal", "--goal", "Test hooks")

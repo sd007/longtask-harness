@@ -24,7 +24,7 @@ def main() -> int:
     event = read_event()
     cwd = str(event.get("cwd") or Path.cwd())
     result = subprocess.run(
-        [sys.executable, str(CONTROLLER), "--root", cwd, "status"],
+        [sys.executable, str(CONTROLLER), "--root", cwd, "summary", "--json"],
         text=True,
         capture_output=True,
         check=False,
@@ -34,20 +34,23 @@ def main() -> int:
         return 0
     try:
         payload = json.loads(result.stdout)
-        state = payload["state"]
     except (json.JSONDecodeError, KeyError, TypeError):
         print("{}")
         return 0
-    if state.get("status") in {"ACCEPTED", "CANCELLED"}:
+    if not payload.get("active") or payload.get("status") in {"ACCEPTED", "CANCELLED"}:
         print("{}")
         return 0
     context = (
         "Goal Flow is active. Resume it before starting unrelated work. "
-        f"Goal={state['goal_id']}; revision={state['goal_revision']}; "
-        f"status={state['status']}; milestone={state.get('current_milestone')}; "
-        f"next_action={state.get('next_action')}; design_drift={payload.get('design_drift')}. "
+        f"Goal={payload['goal_id']}; profile={payload.get('profile')}; "
+        f"status={payload['status']}; "
+        f"progress={payload.get('must_verified')}/{payload.get('must_total')} MUST; "
+        f"milestone={payload.get('milestone')}; blocker={payload.get('blocker')}; "
+        f"recent_failure={payload.get('recent_failure')}; "
+        f"next_action={payload.get('next_action')}; git_sha={payload.get('git_sha')}. "
         "Read goal.md, state.json, evidence.md, and Git state. Use goalctl.py for transitions."
     )
+    context = context[:1150]
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",

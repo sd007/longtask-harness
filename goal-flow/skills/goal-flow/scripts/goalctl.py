@@ -32,6 +32,13 @@ ACCEPTANCE_DIMENSIONS = {
     "migration-rollback",
     "documentation-deliverables",
 }
+PROFILES = {"standard", "strict"}
+STANDARD_DIMENSIONS = {
+    "functional",
+    "negative-boundary",
+    "regression-compatibility",
+    "documentation-deliverables",
+}
 PLACEHOLDER_MARKERS = {
     "to be defined during planning",
     "define during planning",
@@ -138,6 +145,8 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
     directory = goal_dir(root, goal_id)
     state = load_json(directory / "state.json")
     state.setdefault("dimensions", {})
+    # Goals created before v0.3 keep the original strict contract.
+    state.setdefault("profile", "strict")
     return goal_id, directory, state
 
 
@@ -296,6 +305,8 @@ def validate_state(state: dict[str, Any]) -> list[str]:
         errors.append(f"unsupported schema_version: {state.get('schema_version')}")
     if state.get("status") not in ALL_STATUSES:
         errors.append(f"invalid status: {state.get('status')}")
+    if state.get("profile", "strict") not in PROFILES:
+        errors.append(f"invalid profile: {state.get('profile')}")
     for req_id, item in state.get("requirements", {}).items():
         if item.get("status") not in REQUIREMENT_STATUSES:
             errors.append(f"invalid requirement status for {req_id}")
@@ -396,10 +407,14 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
                 reasons.append(f"MUST criterion {req_id} detail is not visible in goal.md: {value}")
 
     dimensions = state.get("dimensions", {})
-    missing_dimensions = sorted(ACCEPTANCE_DIMENSIONS - dimensions.keys())
+    profile = state.get("profile", "strict")
+    required_dimensions = (
+        ACCEPTANCE_DIMENSIONS if profile == "strict" else STANDARD_DIMENSIONS
+    )
+    missing_dimensions = sorted(required_dimensions - dimensions.keys())
     if missing_dimensions:
         reasons.append(f"Unassessed acceptance dimensions: {', '.join(missing_dimensions)}")
-    for dimension_id in sorted(ACCEPTANCE_DIMENSIONS & dimensions.keys()):
+    for dimension_id in sorted(required_dimensions & dimensions.keys()):
         dimension = dimensions[dimension_id]
         status = dimension.get("status")
         rationale = dimension.get("rationale")
@@ -425,8 +440,9 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         "reasons": reasons,
         "must_acceptance_criteria": len(must),
         "required_checks": len(required_checks),
-        "dimensions_assessed": len(ACCEPTANCE_DIMENSIONS & dimensions.keys()),
-        "dimensions_total": len(ACCEPTANCE_DIMENSIONS),
+        "profile": profile,
+        "dimensions_assessed": len(required_dimensions & dimensions.keys()),
+        "dimensions_total": len(required_dimensions),
     }
 
 
@@ -605,7 +621,18 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if directory.exists():
         raise GoalFlowError(f"Goal already exists: {goal_id}")
     directory.mkdir(parents=True)
-    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n| functional | TBD | TBD | TBD |\n| negative-boundary | TBD | TBD | TBD |\n| regression-compatibility | TBD | TBD | TBD |\n| security-privacy | TBD | TBD | TBD |\n| performance-reliability | TBD | TBD | TBD |\n| operations-observability | TBD | TBD | TBD |\n| migration-rollback | TBD | TBD | TBD |\n| documentation-deliverables | TBD | TBD | TBD |\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
+    dimension_order = [
+        "functional", "negative-boundary", "regression-compatibility",
+        "security-privacy", "performance-reliability", "operations-observability",
+        "migration-rollback", "documentation-deliverables",
+    ]
+    required_dimensions = (
+        dimension_order
+        if args.profile == "strict"
+        else [item for item in dimension_order if item in STANDARD_DIMENSIONS]
+    )
+    dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
+    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
     (directory / "evidence.md").write_text(
         f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
@@ -616,6 +643,7 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "goal_id": goal_id,
         "title": args.title,
         "goal_revision": 1,
+        "profile": args.profile,
         "status": "PLANNING",
         "approved": False,
         "approved_design_hash": None,
@@ -665,6 +693,87 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if not state.get("approved"):
         payload["plan"] = plan_readiness(directory, state)
     return payload
+
+
+def concise(value: Any, limit: int = 240) -> str | None:
+    if value is None:
+        return None
+    rendered = " ".join(str(value).split())
+    if not rendered:
+        return None
+    return rendered if len(rendered) <= limit else rendered[: limit - 1] + "…"
+
+
+def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, Any]:
+    must = [
+        item for item in state.get("requirements", {}).values()
+        if item.get("kind") == "must"
+    ]
+    verified = [
+        item for item in must
+        if item.get("status") == "VERIFIED"
+        and evidence_is_fresh(root, item.get("git_sha"))
+    ]
+    failed_checks = sorted(
+        (
+            (check_id, item)
+            for check_id, item in state.get("checks", {}).items()
+            if item.get("status") == "FAIL"
+        ),
+        key=lambda pair: str(pair[1].get("updated_at") or ""),
+        reverse=True,
+    )
+    recent_failure = None
+    if failed_checks:
+        check_id, item = failed_checks[0]
+        recent_failure = concise(f"{check_id}: {item.get('summary') or 'check failed'}")
+    blocker = concise(state.get("wait_reason")) if state.get("status") in WAIT_STATUSES else None
+    payload = {
+        "ok": not validate_state(state),
+        "active": True,
+        "goal_id": goal_id,
+        "title": state.get("title") or goal_id,
+        "profile": state.get("profile", "strict"),
+        "status": state.get("status"),
+        "must_verified": len(verified),
+        "must_total": len(must),
+        "milestone": state.get("current_milestone"),
+        "blocker": blocker,
+        "recent_failure": recent_failure,
+        "git_sha": current_git_sha(root),
+        "next_action": concise(state.get("next_action")),
+    }
+    lines = [
+        f"Goal: {payload['title']} ({goal_id})",
+        f"Profile: {payload['profile']}",
+        f"Status: {payload['status']}",
+        f"Progress: {payload['must_verified']}/{payload['must_total']} MUST verified",
+        f"Milestone: {payload['milestone'] or '-'}",
+    ]
+    if blocker:
+        lines.append(f"Blocked by: {blocker}")
+    elif recent_failure:
+        lines.append(f"Recent failure: {recent_failure}")
+    lines.extend([
+        f"Git: {payload['git_sha']}",
+        f"Next: {payload['next_action'] or '-'}",
+    ])
+    payload["text"] = "\n".join(lines)
+    return payload
+
+
+def cmd_summary(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    if not args.goal_id:
+        path = active_file(root)
+        if not path.exists() or not load_json(path).get("goal_id"):
+            return {
+                "ok": True,
+                "active": False,
+                "message": "No active Goal Flow goal",
+                "text": "No active Goal Flow goal.",
+            }
+    goal_id, _, state = load_state(root, args.goal_id)
+    return build_summary(root, goal_id, state)
 
 
 def cmd_plan_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
@@ -1114,9 +1223,14 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--goal-id", required=True)
     init.add_argument("--title", required=True)
     init.add_argument("--goal", required=True)
+    init.add_argument("--profile", choices=sorted(PROFILES), default="standard")
 
     status = sub.add_parser("status")
     status.add_argument("--goal-id")
+
+    summary = sub.add_parser("summary")
+    summary.add_argument("--goal-id")
+    summary.add_argument("--json", action="store_true")
 
     approve = sub.add_parser("approve")
     approve.add_argument("--goal-id")
@@ -1201,6 +1315,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "init": cmd_init,
     "status": cmd_status,
+    "summary": cmd_summary,
     "plan-check": cmd_plan_check,
     "approve": cmd_approve,
     "record": cmd_record,
@@ -1223,7 +1338,10 @@ def main() -> int:
     root = find_root(args.root)
     try:
         payload = COMMANDS[args.command](args, root)
-        emit(payload, True)
+        if args.command == "summary" and not args.json:
+            print(payload["text"])
+        else:
+            emit(payload, True)
         return 0 if payload.get("ok", True) else 1
     except GoalFlowError as exc:
         emit({"ok": False, "error": str(exc)}, True)
