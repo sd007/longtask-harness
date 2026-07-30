@@ -1,6 +1,6 @@
 ---
 name: goal-flow
-description: Run long software-development goals in Codex from design approval through autonomous implementation, verification, milestone commits, recovery, and evidence-backed delivery. Use when a user asks Codex to own a multi-step coding task, continue until a reliable result, avoid requirement drift, or resume an active goal-flow run.
+description: Choose a task-sized harness for Codex software work, starting with a lightweight plan and escalating to autonomous implementation, verification, recovery, and evidence-backed delivery when complexity or risk warrants it. Use when a user asks Codex to plan a task, own multi-step work, continue until a reliable result, avoid requirement drift, or resume an active goal-flow run.
 ---
 
 # Goal Flow
@@ -27,8 +27,10 @@ Do not edit `state.json` directly. Use the controller.
 
 1. Reuse the bounded SessionStart summary when present; otherwise run `summary --json`.
 2. If `active` is true, read its approved `goal.md` and current Git state, then resume the recorded `next_action`. Use `report --json` for coverage and recent history. Read full `state.json` or `evidence.md` only when a missing detail or failure diagnosis requires it; do not preload the whole audit history on every session.
-3. If `active` is false, run `init --goal-id <slug> --title <title> --goal <outcome>`. The default `standard` profile fits ordinary repository work; pass `--profile strict` for security, migration, production reliability, irreversible operations, or other high-risk work.
+3. If `active` is false, classify the task first. Use a micro-plan for a small, known one-file change; use `init --mode standard` for ordinary multi-step work; use `init --mode goal-flow` when autonomous epochs, cross-session recovery, or explicit approval are needed. Pass `--profile strict` for security, migration, production reliability, irreversible operations, or other high-risk work.
 4. Read [planning.md](references/planning.md) completely and conduct the design phase.
+
+For externally observable behavior changes, add `--behavior-change` at initialization. The controller scaffolds `delta.md` and `tasks.md`; use `#### SCN-* (REQ-*):` headings with Given/When/Then lines and run `review` before delivery.
 
 ## Design before implementation
 
@@ -49,7 +51,7 @@ Before presenting the final plan for approval:
 4. Register each exact verifier command as a `PENDING` required check.
 5. Assess the profile's acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`: four core dimensions for `standard`, all eight for `strict`.
 6. Run `plan-check`. Resolve every gap, then show a visible **Decision check** with three sections: `已自动确定`, `建议默认`, and `仍需用户决定`. If the last section is empty, explicitly say that no high-impact user decision remains. If it is non-empty, ask the smallest set of high-impact questions before approval and include a recommended default and consequence.
-7. When the `goal_flow_approval` MCP tool is available, call it with the current `root`, `goal_id`, `revision`, plan summary, and first milestone action. It opens the native elicitation control with `批准并执行` or `修改方案` and performs the controller transition only after an explicit user choice. In a CLI, phone, or no-MCP context, ask for a natural-language decision and do not require a fixed phrase; only then internally run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
+7. When a full Goal Flow Harness is selected and the `goal_flow_approval` MCP tool is available, call it with the current `root`, `goal_id`, `revision`, plan summary, and first milestone action. It opens the native elicitation control with `批准并执行` or `修改方案` and performs the controller transition only after an explicit user choice. In a CLI, phone, or no-MCP context, ask for a natural-language decision and do not require a fixed phrase; only then internally run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
 8. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes, then run `bind-worktree`.
 9. Commit the approved plan and acceptance-contract checkpoint.
 
@@ -62,7 +64,7 @@ Read [execution.md](references/execution.md) before coding. Repeat:
 3. **Act:** Implement one bounded milestone without unrelated refactoring.
 4. **Preflight:** Run targeted checks directly, inspect the diff, and test negative paths while the implementation is still editable.
 5. **Commit:** Commit the coherent implementation candidate so evidence can bind to an immutable SHA. Use the repository's existing commit convention when one exists; otherwise use the current conversation language for the subject/body (for example, a Chinese task uses `feat: 增加轻量事件报告`). Keep the Conventional Commit type prefix when practical.
-6. **Verify:** Run approved checks through `verify --id <check-id>`. The controller executes the frozen command and records its exit code, output digest, and tested Git SHA. If one fails, fix and create a new implementation commit. Add a verifier only through `replan`.
+6. **Verify:** Run approved checks through `verify --id <check-id>`, and run `review` for behavior-change traceability. The controller executes the frozen command and records its exit code, output digest, and tested Git SHA. If one fails, fix and create a new implementation commit. Add a verifier only through `replan`.
 7. **Record:** Mark acceptance criteria `VERIFIED` only after all their approved `verified_by` checks have fresh PASS receipts. Record risks and counter-evidence, then commit the `.goal-flow/` audit update separately.
 8. **Gate:** Run `gate --apply`. Choose the next epoch from the largest unsatisfied approved acceptance criterion.
 
@@ -98,6 +100,7 @@ status
 summary
 report
 plan-check
+review [--strict]
 bind-worktree
 update --status EXECUTING --milestone M2 --next-action "..." --progress
 verify --id TEST

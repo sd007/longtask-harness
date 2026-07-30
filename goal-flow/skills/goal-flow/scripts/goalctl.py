@@ -38,6 +38,9 @@ ACCEPTANCE_DIMENSIONS = {
     "documentation-deliverables",
 }
 PROFILES = {"standard", "strict"}
+HARNESS_MODES = {"auto", "micro", "standard", "goal-flow"}
+TASK_TYPES = {"unspecified", "fix", "feature", "refactor", "docs", "test", "config", "migration"}
+RISK_LEVELS = {"unspecified", "low", "medium", "high", "critical"}
 STANDARD_DIMENSIONS = {
     "functional",
     "negative-boundary",
@@ -177,6 +180,14 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
     state.setdefault("dimensions", {})
     # Goals created before v0.3 keep the original strict contract.
     state.setdefault("profile", "strict")
+    state.setdefault("harness", {
+        "mode": "goal-flow",
+        "requested_mode": "goal-flow",
+        "task_type": "unspecified",
+        "risk_level": "unspecified",
+        "behavior_change": False,
+        "evidence_level": "strict",
+    })
     state.setdefault("state_revision", 0)
     state.setdefault("contract_version", 1)
     return goal_id, directory, state
@@ -243,6 +254,7 @@ def definitions_hash(state: dict[str, Any]) -> str:
     }
     if int(state.get("contract_version", 1)) >= 2:
         definitions["profile"] = state.get("profile", "strict")
+        definitions["harness"] = state.get("harness", {})
     raw = json.dumps(definitions, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -394,6 +406,13 @@ def validate_state(state: dict[str, Any]) -> list[str]:
         errors.append(f"invalid status: {state.get('status')}")
     if state.get("profile", "strict") not in PROFILES:
         errors.append(f"invalid profile: {state.get('profile')}")
+    harness = state.get("harness") or {}
+    if harness.get("mode") and harness.get("mode") not in HARNESS_MODES - {"auto"}:
+        errors.append(f"invalid harness mode: {harness.get('mode')}")
+    if harness.get("task_type") and harness.get("task_type") not in TASK_TYPES:
+        errors.append(f"invalid task type: {harness.get('task_type')}")
+    if harness.get("risk_level") and harness.get("risk_level") not in RISK_LEVELS:
+        errors.append(f"invalid risk level: {harness.get('risk_level')}")
     if not isinstance(state.get("state_revision", 0), int) or state.get("state_revision", 0) < 0:
         errors.append("invalid state_revision")
     for req_id, item in state.get("requirements", {}).items():
@@ -428,6 +447,185 @@ def valid_check_command(value: str | None) -> bool:
     if not value or not value.strip():
         return False
     return value.strip().lower() not in {"true", ":", "exit 0"}
+
+
+SCENARIO_HEADING_RE = re.compile(
+    r"^####\s+(SCN-[A-Z0-9][A-Z0-9_-]*)(?:\s*\((REQ-[A-Z0-9][A-Z0-9_-]*)\))?\s*:\s*(.+)$",
+    re.IGNORECASE,
+)
+DELTA_HEADING_RE = re.compile(r"^###\s+(REQ-[A-Z0-9][A-Z0-9_-]*)\b", re.IGNORECASE)
+TASK_RE = re.compile(
+    r"^-\s*\[[ xX]\]\s+(T-[A-Z0-9][A-Z0-9_-]*)\s*\(([^)]*)\)\s*:\s*(.+)$",
+    re.IGNORECASE,
+)
+
+
+def parse_scenarios(text: str) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    scenarios: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    current: dict[str, Any] | None = None
+    for line in text.splitlines():
+        match = SCENARIO_HEADING_RE.match(line.strip())
+        if match:
+            scenario_id, requirement_id, title = match.groups()
+            scenario_id = scenario_id.upper()
+            if scenario_id in scenarios:
+                errors.append(f"Duplicate scenario ID: {scenario_id}")
+            current = {
+                "id": scenario_id,
+                "requirement_id": requirement_id.upper() if requirement_id else None,
+                "title": title.strip(),
+                "given": [],
+                "when": [],
+                "then": [],
+            }
+            scenarios[scenario_id] = current
+            continue
+        if current is None:
+            continue
+        condition = re.match(r"^-\s*(GIVEN|WHEN|THEN)\s+(.+)$", line.strip(), re.IGNORECASE)
+        if condition:
+            key = condition.group(1).lower()
+            current[key].append(condition.group(2).strip())
+    for scenario_id, scenario in scenarios.items():
+        missing = [key.upper() for key in ("given", "when", "then") if not scenario[key]]
+        if missing:
+            errors.append(f"Scenario {scenario_id} is missing: {', '.join(missing)}")
+    return scenarios, errors
+
+
+def parse_delta(text: str) -> tuple[dict[str, set[str]], list[str]]:
+    sections = {"ADDED": set(), "MODIFIED": set(), "REMOVED": set()}
+    errors: list[str] = []
+    current: str | None = None
+    seen: dict[str, str] = {}
+    for line in text.splitlines():
+        heading = line.strip().upper()
+        if heading.startswith("## "):
+            name = heading[3:].strip()
+            current = name if name in sections else None
+            continue
+        match = DELTA_HEADING_RE.match(line.strip())
+        if not match or current is None:
+            continue
+        req_id = match.group(1).upper()
+        if req_id in seen:
+            errors.append(f"Requirement {req_id} appears in both {seen[req_id]} and {current}")
+        seen[req_id] = current
+        sections[current].add(req_id)
+    if not any(sections.values()):
+        errors.append("delta.md must contain at least one ADDED, MODIFIED, or REMOVED requirement")
+    return sections, errors
+
+
+def parse_tasks(text: str) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    tasks: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for line in text.splitlines():
+        match = TASK_RE.match(line.strip())
+        if not match:
+            continue
+        task_id, refs_text, description = match.groups()
+        task_id = task_id.upper()
+        if task_id in tasks:
+            errors.append(f"Duplicate task ID: {task_id}")
+            continue
+        refs = {item.strip().upper() for item in refs_text.split(",") if item.strip()}
+        tasks[task_id] = {"id": task_id, "refs": refs, "description": description.strip()}
+    if not tasks:
+        errors.append("tasks.md must contain at least one checked or unchecked task")
+    return tasks, errors
+
+
+def semantic_review(directory: Path, state: dict[str, Any], strict: bool = False) -> dict[str, Any]:
+    """Review the traceability of a behavior change without making claims about code."""
+    harness = state.get("harness", {})
+    behavior_change = bool(harness.get("behavior_change"))
+    if not behavior_change and not any((directory / name).exists() for name in ("delta.md", "tasks.md")):
+        return {
+            "ok": True,
+            "status": "PASS",
+            "skipped": True,
+            "dimensions": {"completeness": "N_A", "correctness": "N_A", "coherence": "N_A"},
+            "findings": [],
+        }
+
+    findings: list[dict[str, str]] = []
+
+    def finding(severity: str, dimension: str, message: str) -> None:
+        findings.append({"severity": severity, "dimension": dimension, "message": message})
+
+    goal_text = (directory / "goal.md").read_text(encoding="utf-8") if (directory / "goal.md").exists() else ""
+    delta_path = directory / "delta.md"
+    tasks_path = directory / "tasks.md"
+    delta_text = delta_path.read_text(encoding="utf-8") if delta_path.exists() else ""
+    tasks_text = tasks_path.read_text(encoding="utf-8") if tasks_path.exists() else ""
+    scenarios, scenario_errors = parse_scenarios("\n".join(part for part in (goal_text, delta_text) if part))
+    for error in scenario_errors:
+        finding("CRITICAL", "completeness", error)
+
+    if not delta_path.exists():
+        finding("CRITICAL", "completeness", "Behavior change requires delta.md")
+    else:
+        _, delta_errors = parse_delta(delta_text)
+        for error in delta_errors:
+            finding("CRITICAL", "coherence", error)
+    if not tasks_path.exists():
+        finding("CRITICAL", "completeness", "Behavior change requires tasks.md")
+        tasks = {}
+    else:
+        tasks, task_errors = parse_tasks(tasks_text)
+        for error in task_errors:
+            finding("CRITICAL", "completeness", error)
+
+    requirements = state.get("requirements", {})
+    must_ids = {req_id.upper() for req_id, item in requirements.items() if item.get("kind") == "must"}
+    scenario_req_ids = {scenario.get("requirement_id") for scenario in scenarios.values()}
+    for req_id in sorted(must_ids):
+        matching = [item for item in scenarios.values() if item.get("requirement_id") == req_id]
+        if not matching:
+            finding("CRITICAL", "completeness", f"MUST requirement {req_id} has no linked scenario")
+    for scenario_id, scenario in scenarios.items():
+        req_id = scenario.get("requirement_id")
+        if req_id and req_id not in requirements:
+            finding("CRITICAL", "coherence", f"Scenario {scenario_id} references unknown requirement {req_id}")
+    for task_id, task in tasks.items():
+        unknown = sorted(
+            ref for ref in task["refs"]
+            if ref.startswith("REQ-") and ref not in requirements
+            or ref.startswith("SCN-") and ref not in scenarios
+        )
+        if unknown:
+            finding("CRITICAL", "coherence", f"Task {task_id} references unknown IDs: {', '.join(unknown)}")
+    for req_id in sorted(must_ids):
+        if tasks and not any(req_id in task["refs"] for task in tasks.values()):
+            finding("CRITICAL", "completeness", f"MUST requirement {req_id} has no linked task")
+
+    if strict:
+        for req_id in sorted(must_ids):
+            item = requirements[req_id]
+            if item.get("status") != "VERIFIED" or not item.get("git_sha"):
+                finding("CRITICAL", "correctness", f"MUST requirement {req_id} lacks verified implementation evidence")
+    elif must_ids and any(requirements[req_id].get("status") != "VERIFIED" for req_id in must_ids):
+        finding("WARNING", "correctness", "Some MUST requirements are not verified yet")
+
+    dimensions = {dimension: "PASS" for dimension in ("completeness", "correctness", "coherence")}
+    for item in findings:
+        if item["severity"] == "CRITICAL":
+            dimensions[item["dimension"]] = "BLOCK"
+        elif dimensions[item["dimension"]] == "PASS":
+            dimensions[item["dimension"]] = "WARN"
+    has_critical = any(item["severity"] == "CRITICAL" for item in findings)
+    has_warning = any(item["severity"] == "WARNING" for item in findings)
+    return {
+        "ok": not has_critical,
+        "status": "BLOCK" if has_critical else "WARN" if has_warning else "PASS",
+        "skipped": False,
+        "dimensions": dimensions,
+        "findings": findings,
+        "scenario_count": len(scenarios),
+        "task_count": len(tasks),
+    }
 
 
 def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
@@ -495,6 +693,12 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
             if value and str(value) not in goal_text:
                 reasons.append(f"MUST criterion {req_id} detail is not visible in goal.md: {value}")
 
+    if state.get("harness", {}).get("behavior_change"):
+        review = semantic_review(directory, state)
+        for finding_item in review.get("findings", []):
+            if finding_item.get("severity") == "CRITICAL":
+                reasons.append(f"Semantic review: {finding_item['message']}")
+
     dimensions = state.get("dimensions", {})
     profile = state.get("profile", "strict")
     required_dimensions = (
@@ -532,6 +736,7 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         "profile": profile,
         "dimensions_assessed": len(required_dimensions & dimensions.keys()),
         "dimensions_total": len(required_dimensions),
+        "harness": state.get("harness", {}),
     }
 
 
@@ -562,11 +767,28 @@ def design_drift(directory: Path, state: dict[str, Any]) -> bool:
         and (
             not expected
             or not expected_definitions
-            or not goal_path.exists()
-            or file_hash(goal_path) != expected
+            or design_hash(directory, state) != expected
             or definitions_hash(state) != expected_definitions
         )
     )
+
+
+def design_hash(directory: Path, state: dict[str, Any]) -> str:
+    """Hash the approved human-authored contract and optional change artifacts."""
+    paths = [directory / "goal.md"]
+    if state.get("harness", {}).get("behavior_change") or (directory / "delta.md").exists():
+        # tasks.md is intentionally a living checklist; changing it alone must
+        # not invalidate the approved outcome. Delta and goal remain frozen.
+        paths.append(directory / "delta.md")
+    if len(paths) == 1:
+        return file_hash(paths[0]) if paths[0].exists() else ""
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(str(path.name).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(file_hash(path).encode("ascii") if path.exists() else b"MISSING")
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> dict[str, Any]:
@@ -660,6 +882,17 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
     if design_drift(directory, state):
         result["reasons"] = ["Approved plan or acceptance contract changed; run replan and obtain approval"]
         return result
+    if state.get("harness", {}).get("behavior_change"):
+        review = semantic_review(directory, state, strict=state.get("profile") == "strict")
+        result["semantic_review"] = review
+        if review.get("status") == "BLOCK":
+            result["gate"] = "CONTINUE"
+            result["reasons"] = [
+                f"Semantic review blocked delivery: {item['message']}"
+                for item in review.get("findings", [])
+                if item.get("severity") == "CRITICAL"
+            ]
+            return result
     requirements = state.get("requirements", {})
     must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
     if not must:
@@ -720,19 +953,72 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         if args.profile == "strict"
         else [item for item in dimension_order if item in STANDARD_DIMENSIONS]
     )
+    mode = args.mode
+    if mode == "auto":
+        mode = "standard"
+    behavior_change = bool(args.behavior_change)
     dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
     goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
+    goal_text = goal_text.replace(
+        "- Infer from repository and domain evidence before asking the user.",
+        "- Harness mode: " + mode + ".\n"
+        + "- Task type: " + args.task_type + ".\n"
+        + "- Risk level: " + args.risk_level + ".\n"
+        + "- Behavior change: " + ("yes" if behavior_change else "no") + ".\n"
+        + "- Infer from repository and domain evidence before asking the user.",
+        1,
+    )
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
     (directory / "evidence.md").write_text(
         f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
         encoding="utf-8",
     )
+    if behavior_change:
+        (directory / "delta.md").write_text(
+            """# Behavior Delta
+
+Describe only externally observable behavior changes. Use one of the sections below.
+
+## ADDED
+
+### REQ-001: Describe the added behavior
+
+#### SCN-001 (REQ-001): Describe the concrete scenario
+
+- GIVEN the starting state
+- WHEN the user or system performs an action
+- THEN the observable result is produced
+
+## MODIFIED
+
+## REMOVED
+
+""",
+            encoding="utf-8",
+        )
+        (directory / "tasks.md").write_text(
+            """# Tasks
+
+Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not require replan unless the approved contract changes.
+
+- [ ] T-001 (REQ-001, SCN-001): Implement and verify the behavior
+""",
+            encoding="utf-8",
+        )
     state = {
         "schema_version": SCHEMA_VERSION,
         "goal_id": goal_id,
         "title": args.title,
         "goal_revision": 1,
         "profile": args.profile,
+        "harness": {
+            "mode": mode,
+            "requested_mode": args.mode,
+            "task_type": args.task_type,
+            "risk_level": args.risk_level,
+            "behavior_change": behavior_change,
+            "evidence_level": "strict" if args.profile == "strict" else "standard",
+        },
         "contract_version": 2,
         "state_revision": 0,
         "worktree_binding": None,
@@ -908,6 +1194,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         "goal_id": goal_id,
         "title": state.get("title") or goal_id,
         "profile": state.get("profile", "strict"),
+        "harness": state.get("harness", {}),
         "status": state.get("status"),
         "must_verified": len(verified),
         "must_total": len(must),
@@ -920,6 +1207,8 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
     lines = [
         f"Goal: {payload['title']} ({goal_id})",
         f"Profile: {payload['profile']}",
+        f"Harness: {payload['harness'].get('mode', 'goal-flow')}"
+        + (" (behavior change)" if payload['harness'].get("behavior_change") else ""),
         f"Status: {payload['status']}",
         f"Progress: {payload['must_verified']}/{payload['must_total']} MUST verified",
         f"Milestone: {payload['milestone'] or '-'}",
@@ -1066,6 +1355,15 @@ def cmd_plan_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     return {"goal_id": goal_id, **result}
 
 
+def cmd_review(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    goal_id, directory, state = load_state(root, args.goal_id)
+    result = semantic_review(directory, state, strict=args.strict)
+    result["goal_id"] = goal_id
+    result["mode"] = state.get("harness", {}).get("mode", "goal-flow")
+    result["message"] = f"Semantic review {result['status']}"
+    return result
+
+
 def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
@@ -1093,7 +1391,7 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         raise GoalFlowError("Explicit user approval is required; pass --user-approved only after it is given")
     state.update({
         "approved": True,
-        "approved_design_hash": file_hash(directory / "goal.md"),
+        "approved_design_hash": design_hash(directory, state),
         "approved_definitions_hash": definitions_hash(state),
         "status": "EXECUTING",
         "current_milestone": args.milestone or "M1",
@@ -1589,6 +1887,10 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--title", required=True)
     init.add_argument("--goal", required=True)
     init.add_argument("--profile", choices=sorted(PROFILES), default="standard")
+    init.add_argument("--mode", choices=sorted(HARNESS_MODES), default="auto")
+    init.add_argument("--behavior-change", action="store_true")
+    init.add_argument("--task-type", choices=sorted(TASK_TYPES), default="unspecified")
+    init.add_argument("--risk-level", choices=sorted(RISK_LEVELS), default="unspecified")
 
     status = sub.add_parser("status")
     status.add_argument("--goal-id")
@@ -1635,6 +1937,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     plan_check = sub.add_parser("plan-check")
     plan_check.add_argument("--goal-id")
+
+    review = sub.add_parser("review")
+    review.add_argument("--goal-id")
+    review.add_argument("--strict", action="store_true")
+    review.add_argument("--json", action="store_true")
 
     verify = sub.add_parser("verify")
     verify.add_argument("--goal-id")
@@ -1691,6 +1998,7 @@ COMMANDS = {
     "report": cmd_report,
     "bind-worktree": cmd_bind_worktree,
     "plan-check": cmd_plan_check,
+    "review": cmd_review,
     "approve": cmd_approve,
     "record": cmd_record,
     "verify": cmd_verify,
@@ -1711,7 +2019,7 @@ def main() -> int:
     args = parser.parse_args()
     root = find_root(args.root)
     try:
-        read_only = args.command in {"status", "summary", "report", "plan-check"}
+        read_only = args.command in {"status", "summary", "report", "plan-check", "review"}
         if args.command == "gate":
             read_only = not args.apply and not args.stop_event
         with controller_lock(root, exclusive=not read_only):

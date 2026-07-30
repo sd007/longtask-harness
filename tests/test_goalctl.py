@@ -70,6 +70,63 @@ class GoalCtlTests(unittest.TestCase):
         state_path.write_text(json.dumps(state), encoding="utf-8")
         self.assertEqual(self.ctl("status")["state"]["profile"], "strict")
 
+    def test_behavior_change_scaffolds_harness_delta_and_tasks(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        initialized = self.ctl(
+            "init", "--goal-id", "behavior-goal", "--title", "Behavior Goal",
+            "--goal", "Change observable behavior", "--behavior-change",
+            "--mode", "standard", "--task-type", "feature", "--risk-level", "medium",
+        )
+        state = initialized["state"]
+        self.assertEqual(state["harness"]["mode"], "standard")
+        self.assertTrue(state["harness"]["behavior_change"])
+        directory = self.repo / ".goal-flow" / "behavior-goal"
+        self.assertTrue((directory / "delta.md").exists())
+        self.assertTrue((directory / "tasks.md").exists())
+        review = self.ctl("review", "--goal-id", "behavior-goal", expected=1)
+        self.assertEqual(review["status"], "BLOCK")
+
+    def test_behavior_change_review_traces_scenarios_and_tasks(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "behavior-goal", "--title", "Behavior Goal",
+            "--goal", "Change observable behavior", "--behavior-change",
+        )
+        self.write_complete_goal_for("behavior-goal")
+        directory = self.repo / ".goal-flow" / "behavior-goal"
+        (directory / "delta.md").write_text(
+            """# Behavior Delta
+
+## ADDED
+
+### REQ-001: Observable feature
+
+#### SCN-001 (REQ-001): Feature succeeds
+
+- GIVEN the repository is ready
+- WHEN the feature is invoked
+- THEN the expected result is returned
+
+## MODIFIED
+
+## REMOVED
+""",
+            encoding="utf-8",
+        )
+        (directory / "tasks.md").write_text(
+            "- [ ] T-001 (REQ-001, SCN-001): Implement and verify the feature\n",
+            encoding="utf-8",
+        )
+        self.ctl("record", "check", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("behavior-goal")
+        self.register_dimensions_for("behavior-goal")
+        review = self.ctl("review", "--goal-id", "behavior-goal")
+        self.assertEqual(review["status"], "WARN")
+        self.assertEqual(review["scenario_count"], 1)
+        self.assertEqual(review["task_count"], 1)
+        strict = self.ctl("review", "--goal-id", "behavior-goal", "--strict", expected=1)
+        self.assertEqual(strict["status"], "BLOCK")
+
     def test_standard_requires_core_dimensions_but_strict_requires_all(self) -> None:
         self.write_complete_goal()
         self.ctl(
@@ -293,9 +350,71 @@ Required check TEST: {check_command}
             encoding="utf-8",
         )
 
+    def write_complete_goal_for(self, goal_id: str, check_command: str = "test -f feature.txt") -> None:
+        goal = self.repo / ".goal-flow" / goal_id / "goal.md"
+        dimension_lines = []
+        for dimension in DIMENSIONS:
+            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+                rationale = f"{dimension} is covered by the observable acceptance criterion"
+                dimension_lines.append(f"- {dimension}: COVERED; {rationale}; REQ-001")
+            else:
+                rationale = f"{dimension} has no material impact for this isolated file fixture"
+                dimension_lines.append(f"- {dimension}: N_A; {rationale}")
+        goal.write_text(
+            f"""# Behavior Goal
+
+## Outcome
+Ship an observable feature.
+
+## Non-goals
+- No unrelated refactoring.
+
+## Context and sources
+- Existing repository behavior and tests.
+
+## Assumptions and decisions
+- Preserve compatibility.
+
+## Questions requiring user decision
+- None after repository inspection.
+
+## Approved design
+Add feature.txt with deterministic behavior.
+
+## Acceptance dimensions
+{chr(10).join(dimension_lines)}
+
+## Acceptance criteria
+REQ-001 | MUST | feature.txt exists with expected content | The committed feature artifact exists and is readable | The file is missing or contains unexpected content | The requested repository outcome and existing test conventions | TEST
+
+Required check TEST: {check_command}
+
+## Milestones
+1. Implement and verify.
+
+## Risks, migration, and rollback
+- Revert the implementation commit.
+
+## Approval
+- Revision: 1
+- Status: PENDING
+""",
+            encoding="utf-8",
+        )
+
     def register_requirement(self) -> None:
         self.ctl(
             "record", "requirement", "--id", "REQ-001", "--kind", "must",
+            "--status", "UNVERIFIED", "--statement", "feature.txt exists with expected content",
+            "--proves", "The committed feature artifact exists and is readable",
+            "--failure-mode", "The file is missing or contains unexpected content",
+            "--basis", "The requested repository outcome and existing test conventions",
+            "--verified-by", "TEST",
+        )
+
+    def register_requirement_for(self, goal_id: str) -> None:
+        self.ctl(
+            "record", "requirement", "--goal-id", goal_id, "--id", "REQ-001", "--kind", "must",
             "--status", "UNVERIFIED", "--statement", "feature.txt exists with expected content",
             "--proves", "The committed feature artifact exists and is readable",
             "--failure-mode", "The file is missing or contains unexpected content",
@@ -314,6 +433,20 @@ Required check TEST: {check_command}
             else:
                 self.ctl(
                     "record", "dimension", "--id", dimension, "--status", "N_A",
+                    "--rationale", f"{dimension} has no material impact for this isolated file fixture",
+                )
+
+    def register_dimensions_for(self, goal_id: str) -> None:
+        for dimension in DIMENSIONS:
+            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+                self.ctl(
+                    "record", "dimension", "--goal-id", goal_id, "--id", dimension, "--status", "COVERED",
+                    "--rationale", f"{dimension} is covered by the observable acceptance criterion",
+                    "--requirement-id", "REQ-001",
+                )
+            else:
+                self.ctl(
+                    "record", "dimension", "--goal-id", goal_id, "--id", dimension, "--status", "N_A",
                     "--rationale", f"{dimension} has no material impact for this isolated file fixture",
                 )
 

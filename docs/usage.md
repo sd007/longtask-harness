@@ -4,7 +4,7 @@
 
 普通用户不需要手动运行 `goalctl.py`。只需用自然语言启动任务、确认方案、处理真实阻塞并做最终验收。
 
-它适合跨多个实现步骤、可能跨会话恢复、验收条件容易漂移或失败代价较高的任务。一次性的小修、已有明确测试的一两个文件改动，直接工作通常更省 Token，不必启动 Goal Flow。日常任务先用 `standard`；只有漏检成本明显高于额外规划成本时才用 `strict`。
+所有非琐碎任务默认先建立轻量计划，再按任务规模选择 Harness。单文件小修使用 `micro`，一般多步骤任务使用 `standard`，跨会话、容易漂移或失败代价较高的任务升级为完整 `goal-flow`；安全、迁移、生产可靠性和不可逆操作额外使用 `strict` profile。
 
 在目标 Git 仓库中开启新的 Codex 任务：
 
@@ -16,7 +16,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 默认使用 `standard` profile，登记功能、边界、兼容和文档交付四个核心验收维度；安全、迁移、生产可靠性或其他高风险任务使用 `strict`，登记全部八维。每条 MUST 标准都必须说明可观察结果、证据范围、失败模式、依据和实际检查。`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。在你明确批准前，Codex 不能修改实现代码；批准会冻结 profile、方案、验收标准、质量维度判断和检查定义。
 
-批准时，Goal Flow 会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件，用户选择后才会写入控制器状态。在 CLI、手机端或无 MCP 控件环境中，直接用自然语言表达决定即可，不需要输入固定句式。
+完整 Goal Flow 批准时，会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件。`micro` 任务不创建完整审计目标，`standard` 任务只有在出现高影响未决项或需要跨 epoch 自主执行时才升级为按钮审批。
 
 ```text
 例如：“按这个方案执行。”
@@ -35,12 +35,13 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 ## 状态和文件
 
-每个目标包含：
+每个完整目标包含：
 
 - `goal.md`：批准的结果、边界、验收标准、质量维度、里程碑、验证器和风险；
 - `state.json`：机器可判定状态，只能由 `goalctl.py` 修改；
 - `evidence.md`：人可读证据、反证、风险和验收历史。
 - `events.jsonl`：只含白名单元数据的追加事件流，不含原始检查输出、prompt 或环境变量值。
+- 行为变化目标还包含 `delta.md`（ADDED/MODIFIED/REMOVED）、`tasks.md`（可持续调整的任务清单）和 Given/When/Then 场景。
 
 `.goal-flow/active.json` 指向当前目标。可以执行：
 
@@ -48,6 +49,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project status
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project summary
 python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project report
+python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project review
 ```
 
 `summary` 适合日常查看和 SessionStart 恢复；恢复时先使用摘要和 `report --json`，只有缺少细节或诊断失败时才读取完整 `state.json`、`evidence.md`，避免每轮重复消耗整个审计历史。文本 `report` 适合最终复盘，包含最小时间线、验证尝试/失败、需求与检查覆盖、残余风险；旧目标没有 `events.jsonl` 时仍可读取。

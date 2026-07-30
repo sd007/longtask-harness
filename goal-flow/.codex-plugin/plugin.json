@@ -1,6 +1,6 @@
 {
   "name": "goal-flow",
-  "version": "0.4.0+codex.20260730075129",
+  "version": "0.5.0+codex.20260730081311",
   "description": "Plan, execute, verify, and deliver long software tasks with evidence-backed gates.",
   "author": {
     "name": "Local developer"
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Goal Flow",
-    "shortDescription": "Reliable long-task execution with native approvals",
-    "longDescription": "A lightweight Codex-native workflow for self-researched plans, explicit acceptance contracts, autonomous implementation epochs, Git checkpoints, verification evidence, drift detection, and user acceptance.",
+    "shortDescription": "Adaptive task harnesses with native approvals",
+    "longDescription": "A lightweight Codex-native workflow that chooses a task-sized harness, tracks behavior changes with scenarios and deltas, executes with evidence-backed gates, and provides native approvals for long or high-risk work.",
     "developerName": "Local developer",
     "category": "Productivity",
     "brandColor": "#4F46E5",
@@ -23,6 +23,6 @@
       "Recover",
       "Interactive approval"
     ],
-    "defaultPrompt": "Use $goal-flow to plan, execute, verify, and deliver this long software task reliably."
+    "defaultPrompt": "Use $goal-flow to choose a task-sized harness, plan, execute, verify, and deliver this software task reliably."
   }
 }
