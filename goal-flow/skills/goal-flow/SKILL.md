@@ -48,8 +48,8 @@ Before presenting the final plan for approval:
 3. Register each criterion as `UNVERIFIED`, including `--proves`, one or more `--failure-mode`, `--basis`, and `--verified-by` values.
 4. Register each exact verifier command as a `PENDING` required check.
 5. Assess the profile's acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`: four core dimensions for `standard`, all eight for `strict`.
-6. Run `plan-check`. Resolve every gap, then present the complete plan and acceptance contract for approval.
-7. Only after the user's explicit approval, run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
+6. Run `plan-check`. Resolve every gap, then show a visible **Decision check** with three sections: `已自动确定`, `建议默认`, and `仍需用户决定`. If the last section is empty, explicitly say that no high-impact user decision remains. If it is non-empty, ask the smallest set of high-impact questions before approval and include a recommended default and consequence.
+7. Present the plan using native approval controls when available: `批准并执行` or `修改方案`. In a CLI, phone, or no-UI context, ask for a natural-language decision and do not require a fixed phrase. Only after explicit approval, internally run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
 8. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes, then run `bind-worktree`.
 9. Commit the approved plan and acceptance-contract checkpoint.
 
@@ -61,7 +61,7 @@ Read [execution.md](references/execution.md) before coding. Repeat:
 2. **Select:** Choose the largest currently verifiable delivery gap.
 3. **Act:** Implement one bounded milestone without unrelated refactoring.
 4. **Preflight:** Run targeted checks directly, inspect the diff, and test negative paths while the implementation is still editable.
-5. **Commit:** Commit the coherent implementation candidate so evidence can bind to an immutable SHA.
+5. **Commit:** Commit the coherent implementation candidate so evidence can bind to an immutable SHA. Use the repository's existing commit convention when one exists; otherwise use the current conversation language for the subject/body (for example, a Chinese task uses `feat: 增加轻量事件报告`). Keep the Conventional Commit type prefix when practical.
 6. **Verify:** Run approved checks through `verify --id <check-id>`. The controller executes the frozen command and records its exit code, output digest, and tested Git SHA. If one fails, fix and create a new implementation commit. Add a verifier only through `replan`.
 7. **Record:** Mark acceptance criteria `VERIFIED` only after all their approved `verified_by` checks have fresh PASS receipts. Record risks and counter-evidence, then commit the `.goal-flow/` audit update separately.
 8. **Gate:** Run `gate --apply`. Choose the next epoch from the largest unsatisfied approved acceptance criterion.
@@ -83,7 +83,11 @@ Read [verification.md](references/verification.md) completely before final revie
 - Never mark a risk `ACCEPTED` unless the user explicitly accepts it; record their identity with `--accepted-by`.
 - Do not claim a probability when confidence is `UNCALIBRATED`.
 
-Only present `READY_FOR_ACCEPTANCE` after `gate --apply` succeeds. Evidence remains current across commits that change only `.goal-flow/`; any product-tree change invalidates it. The user, not the agent, decides acceptance. Run `accept --user-accepted --accepted-by <identity>` only after the user explicitly accepts; otherwise use `reject` with their reason.
+Only present `READY_FOR_ACCEPTANCE` after `gate --apply` succeeds. Evidence remains current across commits that change only `.goal-flow/`; any product-tree change invalidates it. The user, not the agent, decides acceptance. Use native `接受交付` or `需要修改` controls when available; otherwise accept a natural-language decision without requiring a fixed sentence. Only after explicit acceptance, internally run `accept --user-accepted --accepted-by <identity>`; otherwise use `reject` with the user's reason.
+
+## Interaction contract
+
+Controller flags are internal compatibility interfaces, not user-facing syntax. Show the plan decision check before approval, prefer buttons for `批准并执行` / `修改方案` and `接受交付` / `需要修改`, and fall back to natural-language confirmation when the host does not expose buttons. A button or natural-language answer may only translate into the existing controller transition after the deterministic plan or delivery Gate has passed.
 
 ## Control commands
 

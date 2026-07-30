@@ -14,6 +14,18 @@ Build the first complete proposal yourself:
 
 For unresolved questions, give a recommended default and its consequence. Batch only related, high-impact questions. Do not ask the user to discover repository facts Codex can inspect.
 
+## Decision check before approval
+
+After repository and domain investigation, always show a compact decision check before asking for approval:
+
+| Section | Meaning |
+| --- | --- |
+| 已自动确定 | Choices resolved from repository, domain, or official evidence. |
+| 建议默认 | Reversible choices where the recommended option is good enough to proceed. |
+| 仍需用户决定 | Choices that cannot be inferred and would change outcome, public behavior, quality threshold, authorization, or irreversible risk. |
+
+If `仍需用户决定` is non-empty, stop and ask those questions with a recommended default and consequence. If it is empty, explicitly state that no high-impact user decision remains; do not manufacture a question merely to satisfy the protocol.
+
 ## Make the plan decision-complete
 
 Include in `goal.md`:
