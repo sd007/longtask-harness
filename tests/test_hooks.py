@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "goal-flow" / "skills" / "goal-flow" / "scripts" / "goalctl.py"
 SESSION_HOOK = ROOT / "goal-flow" / "hooks" / "session_start.py"
 STOP_HOOK = ROOT / "goal-flow" / "hooks" / "stop.py"
+HOOKS_CONFIG = ROOT / "goal-flow" / "hooks" / "hooks.json"
 DIMENSIONS = [
     "functional", "negative-boundary", "regression-compatibility", "security-privacy",
     "performance-reliability", "operations-observability", "migration-rollback",
@@ -50,6 +51,11 @@ class HookTests(unittest.TestCase):
             text=True, capture_output=True, check=True,
         )
         return json.loads(result.stdout)
+
+    def test_plugin_hooks_config_matches_codex_schema(self) -> None:
+        payload = json.loads(HOOKS_CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual(set(payload), {"hooks"})
+        self.assertEqual(set(payload["hooks"]), {"SessionStart", "Stop"})
 
     def test_session_start_is_silent_without_goal_and_restores_active_goal(self) -> None:
         self.assertEqual(self.hook(SESSION_HOOK), {})

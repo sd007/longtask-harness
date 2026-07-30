@@ -1,5 +1,4 @@
 {
-  "description": "Restore active Goal Flow context and prevent premature completion.",
   "hooks": {
     "SessionStart": [
       {
