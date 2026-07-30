@@ -1,0 +1,18 @@
+{
+  "name": "goal-flow",
+  "version": "0.1.0",
+  "description": "Plan, execute, verify, and deliver long software tasks with evidence-backed gates.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Goal Flow",
+    "shortDescription": "Reliable long software-task execution",
+    "longDescription": "A lightweight Codex-native workflow for approved designs, autonomous implementation epochs, Git checkpoints, verification evidence, drift detection, and user acceptance.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": ["Plan", "Implement", "Verify", "Recover"],
+    "defaultPrompt": "Use $goal-flow to plan, execute, verify, and deliver this long software task reliably."
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Restore active Goal Flow context and prevent premature completion.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/session_start.py",
+            "timeout": 10,
+            "statusMessage": "Loading active Goal Flow state",
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${PLUGIN_ROOT}/hooks/stop.py",
+            "timeout": 15,
+            "statusMessage": "Checking Goal Flow completion gate"
+          }
+        ]
+      }
+    ]
+  }
+}

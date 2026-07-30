@@ -1,0 +1,4 @@
+interface:
+  display_name: "Goal Flow"
+  short_description: "Run reliable long software tasks"
+  default_prompt: "Use $goal-flow to plan, execute, verify, and deliver this long software task reliably."

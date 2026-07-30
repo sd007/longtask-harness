@@ -1,0 +1,1031 @@
+#!/usr/bin/env python3
+"""Small deterministic controller for goal-flow repository state."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+SCHEMA_VERSION = 1
+REQUIREMENT_STATUSES = {"VERIFIED", "PARTIAL", "UNVERIFIED", "CONTRADICTED"}
+CHECK_STATUSES = {"PASS", "FAIL", "PENDING"}
+RISK_STATUSES = {"OPEN", "MITIGATED", "ACCEPTED"}
+RISK_SEVERITIES = {"low", "medium", "high", "critical"}
+RISK_SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+WAIT_STATUSES = {
+    "PLANNING",
+    "WAITING_PLAN_APPROVAL",
+    "WAITING_INPUT",
+    "WAITING_AUTHORIZATION",
+    "BLOCKED",
+    "PAUSED",
+    "CANCELLED",
+}
+ALL_STATUSES = WAIT_STATUSES | {
+    "EXECUTING",
+    "VERIFYING",
+    "READY_FOR_ACCEPTANCE",
+    "ACCEPTED",
+}
+EDITABLE_STATUSES = {
+    "EXECUTING",
+    "VERIFYING",
+    "WAITING_INPUT",
+    "WAITING_AUTHORIZATION",
+    "BLOCKED",
+}
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+class GoalFlowError(RuntimeError):
+    pass
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def emit(payload: dict[str, Any], as_json: bool = True) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(payload.get("message", json.dumps(payload, sort_keys=True)))
+
+
+def atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+
+
+def find_root(start: str | None) -> Path:
+    current = Path(start or os.getcwd()).expanduser().resolve()
+    if current.is_file():
+        current = current.parent
+    for candidate in (current, *current.parents):
+        if (candidate / ".goal-flow").exists() or (candidate / ".git").exists():
+            return candidate
+    return current
+
+
+def goal_store(root: Path) -> Path:
+    return root / ".goal-flow"
+
+
+def active_file(root: Path) -> Path:
+    return goal_store(root) / "active.json"
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise GoalFlowError(f"Missing file: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise GoalFlowError(f"Invalid JSON in {path}: {exc}") from exc
+
+
+def active_goal_id(root: Path, explicit: str | None = None) -> str:
+    goal_id = explicit or str(load_json(active_file(root)).get("goal_id") or "")
+    if goal_id and not SLUG_RE.fullmatch(goal_id):
+        raise GoalFlowError("Invalid goal-id in request or active.json")
+    return goal_id
+
+
+def goal_dir(root: Path, goal_id: str) -> Path:
+    return goal_store(root) / goal_id
+
+
+def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict[str, Any]]:
+    goal_id = active_goal_id(root, explicit)
+    if not goal_id:
+        raise GoalFlowError("No active goal")
+    directory = goal_dir(root, goal_id)
+    state = load_json(directory / "state.json")
+    return goal_id, directory, state
+
+
+def save_state(directory: Path, state: dict[str, Any]) -> None:
+    state["updated_at"] = now()
+    atomic_json_write(directory / "state.json", state)
+
+
+def deactivate_goal(root: Path, goal_id: str) -> None:
+    active = load_json(active_file(root))
+    if active.get("goal_id") == goal_id:
+        atomic_json_write(active_file(root), {
+            "goal_id": None,
+            "last_goal_id": goal_id,
+            "updated_at": now(),
+        })
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def definitions_hash(state: dict[str, Any]) -> str:
+    definitions = {
+        "requirements": {
+            key: {
+                "statement": value.get("statement"),
+                "kind": value.get("kind"),
+                "verified_by": sorted(value.get("verified_by") or []),
+            }
+            for key, value in sorted(state.get("requirements", {}).items())
+        },
+        "checks": {
+            key: {
+                "required": bool(value.get("required")),
+                "command": value.get("command"),
+                "timeout": value.get("timeout"),
+            }
+            for key, value in sorted(state.get("checks", {}).items())
+        },
+    }
+    raw = json.dumps(definitions, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def run_git(root: Path, *args: str) -> str | None:
+    result = subprocess.run(
+        ["git", *args], cwd=root, text=True, capture_output=True, check=False
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def current_git_sha(root: Path) -> str:
+    return run_git(root, "rev-parse", "HEAD") or "UNBORN"
+
+
+def current_branch(root: Path) -> str | None:
+    return run_git(root, "branch", "--show-current")
+
+
+def product_status(root: Path) -> str | None:
+    """Return porcelain status excluding Goal Flow audit files."""
+    output = run_git(root, "status", "--porcelain", "--untracked-files=all")
+    if output is None:
+        return None
+    product_lines: list[str] = []
+    for line in output.splitlines():
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if path != ".goal-flow" and not path.startswith(".goal-flow/"):
+            product_lines.append(line)
+    return "\n".join(product_lines)
+
+
+def product_tree_is_clean(root: Path) -> bool:
+    """Return true when only Goal Flow audit files may be dirty."""
+    return product_status(root) == ""
+
+
+def evidence_is_fresh(root: Path, evidence_sha: str | None) -> bool:
+    """Evidence stays fresh across audit-only commits, but not product changes."""
+    if not evidence_sha or evidence_sha == "UNBORN" or not product_tree_is_clean(root):
+        return False
+    if run_git(root, "merge-base", "--is-ancestor", evidence_sha, "HEAD") is None:
+        return False
+    changed = run_git(
+        root,
+        "diff",
+        "--name-only",
+        f"{evidence_sha}..HEAD",
+        "--",
+        ".",
+        ":(exclude).goal-flow",
+        ":(exclude).goal-flow/**",
+    )
+    return changed == ""
+
+
+def verifiers_are_fresh(root: Path, state: dict[str, Any], check_ids: list[str]) -> bool:
+    return bool(check_ids) and all(
+        check_id in state.get("checks", {})
+        and state["checks"][check_id].get("status") == "PASS"
+        and evidence_is_fresh(root, state["checks"][check_id].get("git_sha"))
+        for check_id in check_ids
+    )
+
+
+def risk_is_unresolved(root: Path, state: dict[str, Any], risk: dict[str, Any]) -> bool:
+    if risk.get("status") == "OPEN":
+        return True
+    if risk.get("status") == "MITIGATED":
+        return not verifiers_are_fresh(root, state, risk.get("verified_by") or [])
+    return False
+
+
+def append_evidence(directory: Path, heading: str, fields: dict[str, Any]) -> None:
+    lines = [f"\n## {now()} — {heading}\n"]
+    for key, value in fields.items():
+        if value is None or value == "":
+            continue
+        safe = str(value).replace("\n", " ").strip()
+        lines.append(f"- **{key}:** {safe}\n")
+    with (directory / "evidence.md").open("a", encoding="utf-8") as handle:
+        handle.writelines(lines)
+
+
+def validate_state(state: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required = {
+        "schema_version",
+        "goal_id",
+        "goal_revision",
+        "status",
+        "approved",
+        "requirements",
+        "checks",
+        "risks",
+    }
+    missing = sorted(required - state.keys())
+    if missing:
+        errors.append(f"missing state fields: {', '.join(missing)}")
+    if state.get("schema_version") != SCHEMA_VERSION:
+        errors.append(f"unsupported schema_version: {state.get('schema_version')}")
+    if state.get("status") not in ALL_STATUSES:
+        errors.append(f"invalid status: {state.get('status')}")
+    for req_id, item in state.get("requirements", {}).items():
+        if item.get("status") not in REQUIREMENT_STATUSES:
+            errors.append(f"invalid requirement status for {req_id}")
+        if item.get("kind") not in {"must", "should"}:
+            errors.append(f"invalid requirement kind for {req_id}")
+    for check_id, item in state.get("checks", {}).items():
+        if item.get("status") not in CHECK_STATUSES:
+            errors.append(f"invalid check status for {check_id}")
+    for risk_id, item in state.get("risks", {}).items():
+        if item.get("status") not in RISK_STATUSES:
+            errors.append(f"invalid risk status for {risk_id}")
+        if item.get("severity") not in RISK_SEVERITIES:
+            errors.append(f"invalid risk severity for {risk_id}")
+    return errors
+
+
+def state_fingerprint(root: Path, state: dict[str, Any]) -> str:
+    selected = {
+        "goal_revision": state.get("goal_revision"),
+        "status": state.get("status"),
+        "current_milestone": state.get("current_milestone"),
+        "next_action": state.get("next_action"),
+        "last_verified_commit": state.get("last_verified_commit"),
+        "requirements": state.get("requirements", {}),
+        "checks": state.get("checks", {}),
+        "risks": state.get("risks", {}),
+        "git_sha": current_git_sha(root),
+        "product_status": product_status(root),
+    }
+    raw = json.dumps(selected, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def design_drift(directory: Path, state: dict[str, Any]) -> bool:
+    expected = state.get("approved_design_hash")
+    expected_definitions = state.get("approved_definitions_hash")
+    goal_path = directory / "goal.md"
+    return bool(
+        state.get("approved")
+        and (
+            not expected
+            or not expected_definitions
+            or not goal_path.exists()
+            or file_hash(goal_path) != expected
+            or definitions_hash(state) != expected_definitions
+        )
+    )
+
+
+def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> dict[str, Any]:
+    requirements = state.get("requirements", {})
+    must = [item for item in requirements.values() if item.get("kind") == "must"]
+    verified = [item for item in must if item.get("status") == "VERIFIED"]
+    fresh = [item for item in verified if evidence_is_fresh(root, item.get("git_sha"))]
+    required_checks = [item for item in state.get("checks", {}).values() if item.get("required")]
+    passing_checks = [
+        item for item in required_checks
+        if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"))
+    ]
+    coverage = round(100 * len(fresh) / len(must)) if must else 0
+    check_coverage = round(100 * len(passing_checks) / len(required_checks)) if required_checks else 0
+    unresolved_serious = [
+        item for item in state.get("risks", {}).values()
+        if risk_is_unresolved(root, state, item)
+        and item.get("severity") in {"high", "critical"}
+    ]
+    unresolved_risks = [
+        item for item in state.get("risks", {}).values() if risk_is_unresolved(root, state, item)
+    ]
+    accepted_serious = [
+        item for item in state.get("risks", {}).values()
+        if item.get("status") == "ACCEPTED" and item.get("severity") in {"high", "critical"}
+    ]
+    contradicted = [
+        item for item in requirements.values() if item.get("status") == "CONTRADICTED"
+    ]
+    failed_optional = [
+        item for item in state.get("checks", {}).values()
+        if not item.get("required") and item.get("status") == "FAIL"
+    ]
+    if (
+        coverage == 100
+        and check_coverage == 100
+        and not unresolved_risks
+        and not accepted_serious
+        and not contradicted
+        and not failed_optional
+    ):
+        band = "HIGH"
+    elif coverage >= 50 and not unresolved_serious:
+        band = "MEDIUM"
+    else:
+        band = "LOW"
+    return {
+        "assurance": band,
+        "confidence": "UNCALIBRATED",
+        "must_requirement_coverage": coverage,
+        "required_check_coverage": check_coverage,
+        "open_high_or_critical_risks": len(unresolved_serious),
+        "open_risks": len(unresolved_risks),
+        "accepted_high_or_critical_risks": len(accepted_serious),
+        "contradicted_requirements": len(contradicted),
+        "failed_optional_checks": len(failed_optional),
+        "must_total": len(must),
+        "must_verified_on_current_sha": len(fresh),
+    }
+
+
+def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[str, Any]:
+    errors = validate_state(state)
+    sha = current_git_sha(root)
+    metrics = assurance_payload(root, state, sha)
+    result: dict[str, Any] = {
+        "gate": "WAIT",
+        "status": state.get("status"),
+        "goal_id": state.get("goal_id"),
+        "goal_revision": state.get("goal_revision"),
+        "git_sha": sha,
+        "next_action": state.get("next_action"),
+        "reasons": [],
+        **metrics,
+    }
+    if errors:
+        result["reasons"] = errors
+        return result
+    status = state["status"]
+    if status == "ACCEPTED":
+        result["gate"] = "ACCEPTED"
+        return result
+    if status in WAIT_STATUSES:
+        result["reasons"] = [state.get("wait_reason") or f"Goal is {status}"]
+        return result
+    if not state.get("approved"):
+        result["reasons"] = ["Design is not approved"]
+        return result
+    if design_drift(directory, state):
+        result["reasons"] = ["Approved goal.md changed; run replan and obtain approval"]
+        return result
+    requirements = state.get("requirements", {})
+    must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
+    if not must:
+        result["reasons"] = ["No MUST requirements are registered"]
+        return result
+    incomplete = [
+        key for key, value in must.items()
+        if value.get("status") != "VERIFIED" or not evidence_is_fresh(root, value.get("git_sha"))
+    ]
+    checks = state.get("checks", {})
+    required_checks = {
+        key: value for key, value in checks.items() if value.get("required")
+    }
+    if not required_checks:
+        result["gate"] = "CONTINUE"
+        result["reasons"] = ["No required verification checks are registered"]
+        return result
+    failing_checks = [
+        key for key, value in required_checks.items()
+        if value.get("status") != "PASS" or not evidence_is_fresh(root, value.get("git_sha"))
+    ]
+    serious_risks = [
+        key for key, value in state.get("risks", {}).items()
+        if risk_is_unresolved(root, state, value)
+        and value.get("severity") in {"high", "critical"}
+    ]
+    if incomplete or failing_checks or serious_risks:
+        result["gate"] = "CONTINUE"
+        if incomplete:
+            result["reasons"].append(f"MUST requirements need current evidence: {', '.join(incomplete)}")
+        if failing_checks:
+            result["reasons"].append(f"Required checks need current PASS evidence: {', '.join(failing_checks)}")
+        if serious_risks:
+            result["reasons"].append(f"Unresolved high/critical risks: {', '.join(serious_risks)}")
+        return result
+    result["gate"] = "READY_FOR_REVIEW"
+    result["next_action"] = "Present the evidence-backed delivery for user acceptance"
+    return result
+
+
+def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    if run_git(root, "rev-parse", "--show-toplevel") is None:
+        raise GoalFlowError("Goal Flow requires a Git repository")
+    goal_id = args.goal_id
+    if not SLUG_RE.fullmatch(goal_id):
+        raise GoalFlowError("goal-id must be lowercase kebab-case")
+    directory = goal_dir(root, goal_id)
+    if directory.exists():
+        raise GoalFlowError(f"Goal already exists: {goal_id}")
+    directory.mkdir(parents=True)
+    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Requirements and verification\n\n| ID | Kind | Observable requirement | Verifier |\n| --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
+    (directory / "goal.md").write_text(goal_text, encoding="utf-8")
+    (directory / "evidence.md").write_text(
+        f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
+        encoding="utf-8",
+    )
+    state = {
+        "schema_version": SCHEMA_VERSION,
+        "goal_id": goal_id,
+        "title": args.title,
+        "goal_revision": 1,
+        "status": "PLANNING",
+        "approved": False,
+        "approved_design_hash": None,
+        "approved_definitions_hash": None,
+        "branch": current_branch(root),
+        "current_milestone": "PLAN",
+        "next_action": "Complete goal.md and obtain explicit user approval",
+        "wait_reason": "Design approval is required before implementation",
+        "requirements": {},
+        "checks": {},
+        "risks": {},
+        "last_verified_commit": None,
+        "no_progress_count": 0,
+        "last_stop_fingerprint": None,
+        "stop_repeat_count": 0,
+        "resume_status": None,
+        "created_at": now(),
+        "updated_at": now(),
+    }
+    save_state(directory, state)
+    atomic_json_write(active_file(root), {"goal_id": goal_id, "updated_at": now()})
+    return {"ok": True, "message": f"Initialized goal {goal_id}", "goal_dir": str(directory), "state": state}
+
+
+def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    goal_id, directory, state = load_state(root, args.goal_id)
+    return {
+        "ok": not validate_state(state),
+        "goal_id": goal_id,
+        "goal_dir": str(directory),
+        "git_sha": current_git_sha(root),
+        "design_drift": design_drift(directory, state),
+        "validation_errors": validate_state(state),
+        "state": state,
+    }
+
+
+def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] not in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
+        raise GoalFlowError(f"Cannot approve from {state['status']}")
+    if not any(item.get("kind") == "must" for item in state.get("requirements", {}).values()):
+        raise GoalFlowError("Register at least one MUST requirement before approval")
+    required_checks = {
+        key: value for key, value in state.get("checks", {}).items() if value.get("required")
+    }
+    if not required_checks:
+        raise GoalFlowError("Register at least one required PENDING check before approval")
+    for check_id, check in required_checks.items():
+        if not check.get("command"):
+            raise GoalFlowError(f"Required check {check_id} has no executable command")
+        if check.get("status") != "PENDING":
+            raise GoalFlowError(f"Required check {check_id} must be PENDING at approval")
+    for req_id, requirement in state.get("requirements", {}).items():
+        if requirement.get("kind") != "must":
+            continue
+        verifiers = requirement.get("verified_by") or []
+        if not verifiers:
+            raise GoalFlowError(f"MUST requirement {req_id} has no --verified-by check")
+        invalid = [check_id for check_id in verifiers if check_id not in required_checks]
+        if invalid:
+            raise GoalFlowError(
+                f"MUST requirement {req_id} references non-required checks: {', '.join(invalid)}"
+            )
+    if not args.user_approved:
+        raise GoalFlowError("Explicit user approval is required; pass --user-approved only after it is given")
+    state.update({
+        "approved": True,
+        "approved_design_hash": file_hash(directory / "goal.md"),
+        "approved_definitions_hash": definitions_hash(state),
+        "status": "EXECUTING",
+        "current_milestone": args.milestone or "M1",
+        "next_action": args.next_action,
+        "wait_reason": None,
+        "no_progress_count": 0,
+        "stop_repeat_count": 0,
+        "approved_by": args.approved_by,
+    })
+    save_state(directory, state)
+    append_evidence(directory, "Design approved", {
+        "goal revision": state["goal_revision"],
+        "design hash": state["approved_design_hash"],
+        "definitions hash": state["approved_definitions_hash"],
+        "next action": state["next_action"],
+        "approved by": state["approved_by"],
+    })
+    return {"ok": True, "message": "Design approved", "state": state}
+
+
+def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot record evidence for immutable goal {state['status']}")
+    sha = args.git_sha or current_git_sha(root)
+    if args.record_type == "requirement":
+        if args.status not in REQUIREMENT_STATUSES:
+            raise GoalFlowError("Invalid requirement status")
+        if args.status != "UNVERIFIED" and not args.evidence:
+            raise GoalFlowError("Requirement findings need non-empty evidence")
+        if args.status != "UNVERIFIED" and (
+            sha == "UNBORN" or run_git(root, "cat-file", "-e", f"{sha}^{{commit}}") is None
+        ):
+            raise GoalFlowError("Requirement evidence must reference an existing Git commit")
+        prior = state["requirements"].get(args.id, {})
+        verified_by = args.verified_by or prior.get("verified_by") or []
+        statement = args.statement or prior.get("statement") or args.id
+        kind = args.kind or prior.get("kind") or "must"
+        if state.get("approved"):
+            if not prior:
+                raise GoalFlowError("Approved requirement set is frozen; run replan before adding one")
+            if statement != prior.get("statement") or kind != prior.get("kind"):
+                raise GoalFlowError("Approved requirement definitions are frozen; run replan to change them")
+            if sorted(verified_by) != sorted(prior.get("verified_by") or []):
+                raise GoalFlowError("Approved requirement verifiers are frozen; run replan to change them")
+        if args.status == "VERIFIED":
+            invalid = [
+                check_id for check_id in verified_by
+                if check_id not in state.get("checks", {})
+                or state["checks"][check_id].get("status") != "PASS"
+                or not evidence_is_fresh(root, state["checks"][check_id].get("git_sha"))
+            ]
+            if not verified_by or invalid:
+                suffix = f": {', '.join(invalid)}" if invalid else ""
+                raise GoalFlowError(f"VERIFIED requirements need fresh passing --verified-by checks{suffix}")
+        state["requirements"][args.id] = {
+            "statement": statement,
+            "kind": kind,
+            "verified_by": verified_by,
+            "status": args.status,
+            "evidence": args.evidence,
+            "git_sha": sha if args.status != "UNVERIFIED" else None,
+            "updated_at": now(),
+        }
+        append_evidence(directory, f"Requirement {args.id}", {
+            "status": args.status,
+            "statement": state["requirements"][args.id]["statement"],
+            "evidence": args.evidence,
+            "Git SHA": state["requirements"][args.id]["git_sha"],
+            "verified by": ", ".join(verified_by),
+            "residual risk": args.risk,
+        })
+    elif args.record_type == "check":
+        if args.status not in CHECK_STATUSES:
+            raise GoalFlowError("Invalid check status")
+        if args.status != "PENDING":
+            raise GoalFlowError("Use verify to execute checks; record check only registers PENDING definitions")
+        if state.get("approved"):
+            raise GoalFlowError("Approved check definitions are frozen; run replan to change them")
+        if not args.check_command or not args.check_command.strip():
+            raise GoalFlowError("Check definitions need an executable --command")
+        if args.timeout <= 0:
+            raise GoalFlowError("Check timeout must be a positive number of seconds")
+        state["checks"][args.id] = {
+            "status": "PENDING",
+            "required": args.required,
+            "command": args.check_command,
+            "timeout": args.timeout,
+            "summary": None,
+            "output_digest": None,
+            "git_sha": None,
+            "updated_at": now(),
+        }
+        append_evidence(directory, f"Check {args.id}", {
+            "status": "PENDING",
+            "required": args.required,
+            "command": args.check_command,
+            "timeout": args.timeout,
+        })
+    elif args.record_type == "risk":
+        if args.status not in RISK_STATUSES:
+            raise GoalFlowError("Invalid risk status")
+        prior = state["risks"].get(args.id, {})
+        severity = args.severity or prior.get("severity") or "low"
+        if prior and RISK_SEVERITY_ORDER[severity] < RISK_SEVERITY_ORDER[prior["severity"]]:
+            raise GoalFlowError("Risk severity cannot be lowered; mitigate or explicitly accept it")
+        verified_by = args.verified_by or prior.get("verified_by") or []
+        if args.status == "ACCEPTED" and not args.accepted_by:
+            raise GoalFlowError("Accepted risks require --accepted-by with the approving identity")
+        if args.status == "MITIGATED":
+            if not args.evidence:
+                raise GoalFlowError("MITIGATED risks require non-empty evidence")
+            if not verifiers_are_fresh(root, state, verified_by):
+                raise GoalFlowError("MITIGATED risks require fresh PASS checks via --verified-by")
+        state["risks"][args.id] = {
+            "status": args.status,
+            "severity": severity,
+            "description": args.statement or prior.get("description") or args.evidence or args.id,
+            "evidence": args.evidence,
+            "verified_by": verified_by,
+            "git_sha": current_git_sha(root) if args.status == "MITIGATED" else None,
+            "accepted_by": args.accepted_by if args.status == "ACCEPTED" else None,
+            "updated_at": now(),
+        }
+        append_evidence(directory, f"Risk {args.id}", {
+            "status": args.status,
+            "severity": severity,
+            "description": state["risks"][args.id]["description"],
+            "evidence": args.evidence,
+            "verified by": ", ".join(verified_by),
+            "accepted by": state["risks"][args.id]["accepted_by"],
+        })
+    else:
+        append_evidence(directory, "Note", {"message": args.evidence or args.statement})
+    if args.record_type in {"requirement", "check"} and args.status not in {"UNVERIFIED", "PENDING"}:
+        state["last_verified_commit"] = sha
+    state["no_progress_count"] = 0
+    state["stop_repeat_count"] = 0
+    save_state(directory, state)
+    return {"ok": True, "message": f"Recorded {args.record_type}", "state": state}
+
+
+def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot verify immutable goal {state['status']}")
+    if not state.get("approved"):
+        raise GoalFlowError("Check commands cannot run before explicit design approval")
+    check = state.get("checks", {}).get(args.id)
+    if not check:
+        raise GoalFlowError(f"Unknown check: {args.id}")
+    command = check.get("command")
+    if not command:
+        raise GoalFlowError(f"Check {args.id} has no approved command")
+    if state.get("approved") and design_drift(directory, state):
+        raise GoalFlowError("Approved definitions changed; run replan before verification")
+    if not product_tree_is_clean(root):
+        raise GoalFlowError("Commit or clean product-tree changes before running a bound check")
+    sha = current_git_sha(root)
+    if sha == "UNBORN":
+        raise GoalFlowError("Verification requires an existing Git commit")
+    timeout = int(check.get("timeout") or 300)
+    timed_out = False
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            text=True,
+            capture_output=True,
+            shell=True,
+            executable="/bin/sh",
+            timeout=timeout,
+            check=False,
+        )
+        returncode = completed.returncode
+        output = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        returncode = 124
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        output = "\n".join(part for part in (stdout, stderr) if part).strip()
+    clean_after = product_tree_is_clean(root)
+    status = "PASS" if returncode == 0 and clean_after else "FAIL"
+    summary_parts = [f"exit={returncode}"]
+    if timed_out:
+        summary_parts.append(f"timed out after {timeout}s")
+    if not clean_after:
+        summary_parts.append("command changed the product tree")
+    if output:
+        summary_parts.append(output[-4000:])
+    summary = " | ".join(summary_parts)
+    check.update({
+        "status": status,
+        "summary": summary,
+        "output_digest": hashlib.sha256(output.encode()).hexdigest(),
+        "git_sha": sha,
+        "updated_at": now(),
+    })
+    state["last_verified_commit"] = sha
+    state["no_progress_count"] = 0
+    state["stop_repeat_count"] = 0
+    save_state(directory, state)
+    append_evidence(directory, f"Executed check {args.id}", {
+        "status": status,
+        "command": command,
+        "exit code": returncode,
+        "summary": summary,
+        "output digest": check["output_digest"],
+        "Git SHA": sha,
+    })
+    return {
+        "ok": status == "PASS",
+        "message": f"Check {args.id} {status}",
+        "check_id": args.id,
+        "status": status,
+        "git_sha": sha,
+        "summary": summary,
+        "state": state,
+    }
+
+
+def cmd_update(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot update immutable goal {state['status']}")
+    if args.status and args.status not in EDITABLE_STATUSES:
+        raise GoalFlowError(f"Use a dedicated command for status {args.status}")
+    if args.status:
+        state["status"] = args.status
+    if args.milestone:
+        state["current_milestone"] = args.milestone
+    if args.next_action:
+        state["next_action"] = args.next_action
+    if args.progress:
+        state["no_progress_count"] = 0
+        state["stop_repeat_count"] = 0
+    if args.no_progress:
+        state["no_progress_count"] = int(state.get("no_progress_count", 0)) + 1
+    save_state(directory, state)
+    return {"ok": True, "message": "State updated", "state": state}
+
+
+def cmd_replan(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot replan immutable goal {state['status']}")
+    state["goal_revision"] += 1
+    state.update({
+        "status": "PLANNING",
+        "approved": False,
+        "approved_design_hash": None,
+        "approved_definitions_hash": None,
+        "current_milestone": "PLAN",
+        "next_action": "Revise goal.md and obtain explicit approval",
+        "wait_reason": args.reason,
+        "no_progress_count": 0,
+        "stop_repeat_count": 0,
+    })
+    for item in state.get("requirements", {}).values():
+        item.update({"status": "UNVERIFIED", "evidence": None, "git_sha": None})
+    for item in state.get("checks", {}).values():
+        item.update({"status": "PENDING", "summary": None, "output_digest": None, "git_sha": None})
+    save_state(directory, state)
+    append_evidence(directory, "Replan required", {"new revision": state["goal_revision"], "reason": args.reason})
+    return {"ok": True, "message": "Goal returned to planning", "state": state}
+
+
+def cmd_pause(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot pause {state['status']}")
+    state["resume_status"] = state["status"]
+    state["status"] = "PAUSED"
+    state["wait_reason"] = args.reason
+    save_state(directory, state)
+    return {"ok": True, "message": "Goal paused", "state": state}
+
+
+def cmd_resume(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] not in {"PAUSED", "WAITING_INPUT", "WAITING_AUTHORIZATION", "BLOCKED"}:
+        raise GoalFlowError(f"Cannot resume from {state['status']}")
+    target = state.get("resume_status") or ("EXECUTING" if state.get("approved") else "PLANNING")
+    state.update({"status": target, "wait_reason": None, "resume_status": None, "stop_repeat_count": 0})
+    save_state(directory, state)
+    return {"ok": True, "message": "Goal resumed", "state": state}
+
+
+def cmd_block(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot block immutable goal {state['status']}")
+    state["resume_status"] = state["status"]
+    state["status"] = "BLOCKED"
+    state["wait_reason"] = args.reason
+    save_state(directory, state)
+    return {"ok": True, "message": "Goal blocked", "state": state}
+
+
+def cmd_cancel(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    goal_id, directory, state = load_state(root, args.goal_id)
+    if state["status"] in {"ACCEPTED", "CANCELLED"}:
+        raise GoalFlowError(f"Cannot cancel immutable goal {state['status']}")
+    state["status"] = "CANCELLED"
+    state["wait_reason"] = args.reason
+    save_state(directory, state)
+    deactivate_goal(root, goal_id)
+    return {"ok": True, "message": "Goal cancelled", "state": state}
+
+
+def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    result = evaluate_gate(root, directory, state)
+    if args.stop_event and result["gate"] == "CONTINUE":
+        fingerprint = state_fingerprint(root, state)
+        if fingerprint == state.get("last_stop_fingerprint"):
+            state["stop_repeat_count"] = int(state.get("stop_repeat_count", 0)) + 1
+        else:
+            state["last_stop_fingerprint"] = fingerprint
+            state["stop_repeat_count"] = 1
+        if state["stop_repeat_count"] >= 3:
+            result["gate"] = "WAIT"
+            result["reasons"] = ["No observable state progress across three continuation attempts"]
+            result["next_action"] = "Diagnose the blocker or request user input"
+            state["resume_status"] = state["status"]
+            state["status"] = "BLOCKED"
+            state["wait_reason"] = result["reasons"][0]
+            result["status"] = state["status"]
+        save_state(directory, state)
+    if args.apply and result["gate"] == "READY_FOR_REVIEW" and state["status"] != "READY_FOR_ACCEPTANCE":
+        state["status"] = "READY_FOR_ACCEPTANCE"
+        state["next_action"] = result["next_action"]
+        state["last_verified_commit"] = result["git_sha"]
+        save_state(directory, state)
+        result["status"] = state["status"]
+    elif args.apply and result["gate"] == "CONTINUE" and state["status"] == "READY_FOR_ACCEPTANCE":
+        state["status"] = "VERIFYING"
+        state["next_action"] = "Refresh stale evidence and rerun the delivery gate"
+        save_state(directory, state)
+        result["status"] = state["status"]
+        result["next_action"] = state["next_action"]
+    return result
+
+
+def cmd_accept(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    goal_id, directory, state = load_state(root, args.goal_id)
+    if state["status"] != "READY_FOR_ACCEPTANCE":
+        raise GoalFlowError("Only a goal ready for acceptance can be accepted")
+    gate = evaluate_gate(root, directory, state)
+    if gate["gate"] != "READY_FOR_REVIEW":
+        reasons = "; ".join(gate.get("reasons") or ["delivery evidence is stale"])
+        raise GoalFlowError(f"Acceptance gate is no longer satisfied: {reasons}")
+    if not args.user_accepted:
+        raise GoalFlowError("Explicit user acceptance is required; pass --user-accepted only after it is given")
+    state["status"] = "ACCEPTED"
+    state["next_action"] = None
+    save_state(directory, state)
+    append_evidence(directory, "User acceptance", {
+        "status": "ACCEPTED",
+        "accepted by": args.accepted_by,
+        "Git SHA": current_git_sha(root),
+    })
+    deactivate_goal(root, goal_id)
+    return {"ok": True, "message": "Goal accepted", "state": state}
+
+
+def cmd_reject(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if state["status"] != "READY_FOR_ACCEPTANCE":
+        raise GoalFlowError("Only a goal ready for acceptance can be rejected")
+    state.update({"status": "EXECUTING", "next_action": args.reason, "wait_reason": None})
+    save_state(directory, state)
+    append_evidence(directory, "Delivery rejected", {"reason": args.reason})
+    return {"ok": True, "message": "Goal returned to execution", "state": state}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", help="Repository root; defaults to discovery from cwd")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init")
+    init.add_argument("--goal-id", required=True)
+    init.add_argument("--title", required=True)
+    init.add_argument("--goal", required=True)
+
+    status = sub.add_parser("status")
+    status.add_argument("--goal-id")
+
+    approve = sub.add_parser("approve")
+    approve.add_argument("--goal-id")
+    approve.add_argument("--milestone")
+    approve.add_argument("--next-action", required=True)
+    approve.add_argument("--user-approved", action="store_true")
+    approve.add_argument("--approved-by", default="user")
+
+    record = sub.add_parser("record")
+    record.add_argument("record_type", choices=["requirement", "check", "risk", "note"])
+    record.add_argument("--goal-id")
+    record.add_argument("--id", default="NOTE")
+    record.add_argument("--statement")
+    record.add_argument("--kind", choices=["must", "should"])
+    record.add_argument("--verified-by", action="append")
+    record.add_argument("--status")
+    record.add_argument("--evidence")
+    record.add_argument("--risk")
+    record.add_argument("--git-sha")
+    record.add_argument("--command", dest="check_command")
+    record.add_argument("--required", action="store_true")
+    record.add_argument("--severity", choices=sorted(RISK_SEVERITIES))
+    record.add_argument("--accepted-by")
+    record.add_argument("--timeout", type=int, default=300)
+
+    verify = sub.add_parser("verify")
+    verify.add_argument("--goal-id")
+    verify.add_argument("--id", required=True)
+
+    update = sub.add_parser("update")
+    update.add_argument("--goal-id")
+    update.add_argument("--status")
+    update.add_argument("--milestone")
+    update.add_argument("--next-action")
+    update.add_argument("--progress", action="store_true")
+    update.add_argument("--no-progress", action="store_true")
+
+    replan = sub.add_parser("replan")
+    replan.add_argument("--goal-id")
+    replan.add_argument("--reason", required=True)
+
+    pause = sub.add_parser("pause")
+    pause.add_argument("--goal-id")
+    pause.add_argument("--reason", required=True)
+
+    resume = sub.add_parser("resume")
+    resume.add_argument("--goal-id")
+
+    block = sub.add_parser("block")
+    block.add_argument("--goal-id")
+    block.add_argument("--reason", required=True)
+
+    cancel = sub.add_parser("cancel")
+    cancel.add_argument("--goal-id")
+    cancel.add_argument("--reason", required=True)
+
+    gate = sub.add_parser("gate")
+    gate.add_argument("--goal-id")
+    gate.add_argument("--apply", action="store_true")
+    gate.add_argument("--stop-event", action="store_true")
+
+    accept = sub.add_parser("accept")
+    accept.add_argument("--goal-id")
+    accept.add_argument("--user-accepted", action="store_true")
+    accept.add_argument("--accepted-by", default="user")
+
+    reject = sub.add_parser("reject")
+    reject.add_argument("--goal-id")
+    reject.add_argument("--reason", required=True)
+
+    return parser
+
+
+COMMANDS = {
+    "init": cmd_init,
+    "status": cmd_status,
+    "approve": cmd_approve,
+    "record": cmd_record,
+    "verify": cmd_verify,
+    "update": cmd_update,
+    "replan": cmd_replan,
+    "pause": cmd_pause,
+    "resume": cmd_resume,
+    "block": cmd_block,
+    "cancel": cmd_cancel,
+    "gate": cmd_gate,
+    "accept": cmd_accept,
+    "reject": cmd_reject,
+}
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    root = find_root(args.root)
+    try:
+        payload = COMMANDS[args.command](args, root)
+        emit(payload, True)
+        return 0 if payload.get("ok", True) else 1
+    except GoalFlowError as exc:
+        emit({"ok": False, "error": str(exc)}, True)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
