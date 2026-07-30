@@ -111,7 +111,7 @@
   "goal_revision": 1,
   "last_stop_fingerprint": null,
   "last_verified_commit": "b649967d2adb6b661886473519b299732fe4b2b3",
-  "next_action": "Present the evidence-backed delivery for user acceptance",
+  "next_action": null,
   "no_progress_count": 0,
   "profile": "standard",
   "requirements": {
@@ -196,11 +196,11 @@
   "resume_status": null,
   "risks": {},
   "schema_version": 1,
-  "state_revision": 24,
-  "status": "READY_FOR_ACCEPTANCE",
+  "state_revision": 25,
+  "status": "ACCEPTED",
   "stop_repeat_count": 0,
   "title": "Goal Flow v0.3.1 \u4ea4\u4e92\u4f53\u9a8c\u4fee\u8ba2",
-  "updated_at": "2026-07-30T07:34:40Z",
+  "updated_at": "2026-07-30T07:35:43Z",
   "wait_reason": null,
   "worktree_binding": {
     "branch": "codex/goal-flow-v0.3",

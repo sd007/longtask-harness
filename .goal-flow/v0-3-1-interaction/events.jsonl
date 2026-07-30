@@ -22,3 +22,4 @@
 {"event":"record_requirement","git_sha":"b649967d2adb6b661886473519b299732fe4b2b3","milestone":"M3","revision":22,"status":"EXECUTING","time":"2026-07-30T07:34:39Z"}
 {"event":"record_requirement","git_sha":"b649967d2adb6b661886473519b299732fe4b2b3","milestone":"M3","revision":23,"status":"EXECUTING","time":"2026-07-30T07:34:39Z"}
 {"event":"gate","git_sha":"b649967d2adb6b661886473519b299732fe4b2b3","milestone":"M3","result":"READY_FOR_REVIEW","revision":24,"status":"READY_FOR_ACCEPTANCE","time":"2026-07-30T07:34:40Z"}
+{"event":"accept","git_sha":"a496f2b5e82a47e3cafec029e73e386f3547461c","milestone":"M3","revision":25,"status":"ACCEPTED","time":"2026-07-30T07:35:43Z"}

@@ -160,3 +160,8 @@
 - **what evidence proves:** 控制器生成的冻结检查回执证明兼容性
 - **failure modes:** schema 1、无 UI 或现有 CLI 调用被破坏
 - **basis:** v0.3 已验收基线
+
+## 2026-07-30T07:35:43Z — User acceptance
+- **status:** ACCEPTED
+- **accepted by:** user
+- **Git SHA:** a496f2b5e82a47e3cafec029e73e386f3547461c
