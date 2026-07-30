@@ -3,41 +3,72 @@
   "approved_by": "user",
   "approved_definitions_hash": "e0f5996ee0acd500474ced41fbe127c93c504bd2042bc46438ab5d313334528f",
   "approved_design_hash": "aa3085b7e96829aa115c613154b08f0c065ddade2a91fab7d352a0e8311c3b48",
-  "branch": "codex/goal-flow-v0.1",
+  "branch": "codex/goal-flow-v0.3",
   "checks": {
     "COMPILE": {
       "command": "python3 -m compileall -q goal-flow tests",
-      "git_sha": null,
-      "output_digest": null,
+      "duration_ms": 35,
+      "environment": {
+        "architecture": "arm64",
+        "lockfiles": {},
+        "os": "Darwin",
+        "os_release": "25.5.0",
+        "python": "3.13.3"
+      },
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
+      "output_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "required": true,
-      "status": "PENDING",
-      "summary": null,
+      "status": "PASS",
+      "summary": "exit=0",
+      "termination": null,
+      "timed_out": false,
       "timeout": 60,
-      "updated_at": "2026-07-30T06:49:51Z"
+      "updated_at": "2026-07-30T07:11:39Z"
     },
     "DOCS": {
       "command": "python3 -c 'from pathlib import Path; text=\"\\n\".join(Path(p).read_text() for p in [\"README.md\",\"docs/design.md\",\"docs/usage.md\"]); required=[\"standard\",\"strict\",\"summary\",\"bind-worktree\",\"events.jsonl\",\"report\"]; raise SystemExit(0 if all(item in text for item in required) else 1)'",
-      "git_sha": null,
-      "output_digest": null,
+      "duration_ms": 26,
+      "environment": {
+        "architecture": "arm64",
+        "lockfiles": {},
+        "os": "Darwin",
+        "os_release": "25.5.0",
+        "python": "3.13.3"
+      },
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
+      "output_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "required": true,
-      "status": "PENDING",
-      "summary": null,
+      "status": "PASS",
+      "summary": "exit=0",
+      "termination": null,
+      "timed_out": false,
       "timeout": 30,
-      "updated_at": "2026-07-30T06:49:51Z"
+      "updated_at": "2026-07-30T07:11:39Z"
     },
     "TESTS": {
       "command": "python3 -m unittest discover -s tests -v",
-      "git_sha": null,
-      "output_digest": null,
+      "duration_ms": 27155,
+      "environment": {
+        "architecture": "arm64",
+        "lockfiles": {},
+        "os": "Darwin",
+        "os_release": "25.5.0",
+        "python": "3.13.3"
+      },
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
+      "output_digest": "68f492f1b1d6bc4784c39235179c8310909d0fbdf25451cdc914891dec16f617",
       "required": true,
-      "status": "PENDING",
-      "summary": null,
+      "status": "PASS",
+      "summary": "exit=0 | hanges (test_goalctl.GoalCtlTests.test_gate_allows_audit_commits_but_invalidates_product_changes) ... ok\ntest_locked_concurrent_updates_increment_state_revision_without_loss (test_goalctl.GoalCtlTests.test_locked_concurrent_updates_increment_state_revision_without_loss) ... ok\ntest_pause_and_resume (test_goalctl.GoalCtlTests.test_pause_and_resume) ... ok\ntest_plan_check_rejects_machine_only_acceptance_details (test_goalctl.GoalCtlTests.test_plan_check_rejects_machine_only_acceptance_details) ... ok\ntest_plan_check_requires_detailed_acceptance_contract (test_goalctl.GoalCtlTests.test_plan_check_requires_detailed_acceptance_contract) ... ok\ntest_profiles_default_to_standard_and_legacy_goals_remain_strict (test_goalctl.GoalCtlTests.test_profiles_default_to_standard_and_legacy_goals_remain_strict) ... ok\ntest_replan_invalidates_approval_and_evidence (test_goalctl.GoalCtlTests.test_replan_invalidates_approval_and_evidence) ... ok\ntest_report_supports_legacy_goals_without_events (test_goalctl.GoalCtlTests.test_report_supports_legacy_goals_without_events) ... ok\ntest_serious_risk_mitigation_requires_fresh_check_receipt (test_goalctl.GoalCtlTests.test_serious_risk_mitigation_requires_fresh_check_receipt) ... ok\ntest_standard_requires_core_dimensions_but_strict_requires_all (test_goalctl.GoalCtlTests.test_standard_requires_core_dimensions_but_strict_requires_all) ... ok\ntest_state_compare_and_swap_rejects_a_stale_writer (test_goalctl.GoalCtlTests.test_state_compare_and_swap_rejects_a_stale_writer) ... ok\ntest_status_is_graceful_without_an_active_goal (test_goalctl.GoalCtlTests.test_status_is_graceful_without_an_active_goal) ... ok\ntest_stop_loop_breaker_waits_after_three_unchanged_attempts (test_goalctl.GoalCtlTests.test_stop_loop_breaker_waits_after_three_unchanged_attempts) ... ok\ntest_summary_has_human_and_json_views (test_goalctl.GoalCtlTests.test_summary_has_human_and_json_views) ... ok\ntest_verifier_receipt_contains_allowlisted_environment_fingerprint (test_goalctl.GoalCtlTests.test_verifier_receipt_contains_allowlisted_environment_fingerprint) ... ok\ntest_verifier_timeout_kills_descendant_process_group (test_goalctl.GoalCtlTests.test_verifier_timeout_kills_descendant_process_group) ... ok\ntest_plugin_hooks_config_matches_codex_schema (test_hooks.HookTests.test_plugin_hooks_config_matches_codex_schema) ... ok\ntest_session_start_is_silent_without_goal_and_restores_active_goal (test_hooks.HookTests.test_session_start_is_silent_without_goal_and_restores_active_goal) ... ok\ntest_stop_continues_execution_but_not_planning_or_repeated_stall (test_hooks.HookTests.test_stop_continues_execution_but_not_planning_or_repeated_stall) ... ok\ntest_dry_run_changes_nothing (test_installer.InstallerTests.test_dry_run_changes_nothing) ... ok\ntest_failed_codex_install_restores_previous_plugin_and_marketplace (test_installer.InstallerTests.test_failed_codex_install_restores_previous_plugin_and_marketplace) ... ok\ntest_install_merges_marketplace_and_copies_plugin (test_installer.InstallerTests.test_install_merges_marketplace_and_copies_plugin) ... ok\ntest_installed_plugin_can_uninstall_itself (test_installer.InstallerTests.test_installed_plugin_can_uninstall_itself) ... ok\ntest_interactive_install_offers_codex_hook_setup (test_installer.InstallerTests.test_interactive_install_offers_codex_hook_setup) ... ok\ntest_invalid_marketplace_is_never_overwritten (test_installer.InstallerTests.test_invalid_marketplace_is_never_overwritten) ... ok\ntest_one_command_wrappers_install_and_uninstall (test_installer.InstallerTests.test_one_command_wrappers_install_and_uninstall) ... ok\ntest_reinstall_replaces_entry_without_duplicates (test_installer.InstallerTests.test_reinstall_replaces_entry_without_duplicates) ... ok\ntest_uninstall_preserves_other_entries_and_is_recoverable (test_installer.InstallerTests.test_uninstall_preserves_other_entries_and_is_recoverable) ... ok\n\n----------------------------------------------------------------------\nRan 41 tests in 27.059s\n\nOK",
+      "termination": null,
+      "timed_out": false,
       "timeout": 180,
-      "updated_at": "2026-07-30T06:49:51Z"
+      "updated_at": "2026-07-30T07:11:39Z"
     }
   },
+  "contract_version": 1,
   "created_at": "2026-07-30T06:48:03Z",
-  "current_milestone": "M2",
+  "current_milestone": "M4",
   "dimensions": {
     "documentation-deliverables": {
       "rationale": "README\u3001\u8bbe\u8ba1\u3001\u4f7f\u7528\u548c\u5b89\u88c5\u8bf4\u660e\u5fc5\u987b\u53cd\u6620\u65b0 profile\u3001\u547d\u4ee4\u3001\u517c\u5bb9\u6027\u4e0e\u9650\u5236\u3002",
@@ -115,9 +146,9 @@
   },
   "goal_id": "v0-3-lightweight-tool",
   "goal_revision": 1,
-  "last_stop_fingerprint": null,
-  "last_verified_commit": null,
-  "next_action": "\u5b9e\u73b0\u63a7\u5236\u5668\u9501\u3001CAS\u3001worktree \u7ed1\u5b9a\u3001\u8fdb\u7a0b\u7ec4\u8d85\u65f6\u6cbb\u7406\u548c\u73af\u5883\u6307\u7eb9",
+  "last_stop_fingerprint": "d4af875f8acf9feca55d8013bd54959af6d603d17b61a37499b2f23f26020d57",
+  "last_verified_commit": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
+  "next_action": "Present the evidence-backed delivery for user acceptance",
   "no_progress_count": 0,
   "profile": "strict",
   "requirements": {
@@ -125,16 +156,16 @@
       "basis": [
         "\u5f53\u524d 31 \u4e2a\u57fa\u7ebf\u6d4b\u8bd5\u3001\u6807\u51c6\u5e93\u4f9d\u8d56\u627f\u8bfa\u548c\u7528\u6237\u8981\u6c42\u8f7b\u4fbf\u5347\u7ea7"
       ],
-      "evidence": null,
+      "evidence": "TESTS\u3001COMPILE\u3001DOCS \u5747\u901a\u8fc7\uff0c\u8986\u76d6\u547d\u4ee4\u3001Hook\u3001\u5b89\u88c5\u5668\u3001schema 1 \u548c v0.3 \u6587\u6863\u3002",
       "failure_modes": [
         "\u65e7\u72b6\u6001\u4e0d\u5f97\u8981\u6c42\u79bb\u7ebf\u8fc1\u79fb\uff1b\u73b0\u6709 JSON \u6d88\u8d39\u8005\u4e0d\u5f97\u56e0\u65b0\u589e\u547d\u4ee4\u6539\u53d8\u65e2\u6709\u8f93\u51fa\uff1b\u5b89\u88c5\u5931\u8d25\u56de\u6eda\u884c\u4e3a\u4e0d\u5f97\u9000\u5316\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
       "kind": "must",
       "proves": "\u5168\u91cf\u56de\u5f52\u3001Python \u7f16\u8bd1\u68c0\u67e5\u548c\u6587\u6863\u5951\u7ea6\u68c0\u67e5\u8bc1\u660e\u517c\u5bb9\u8def\u5f84\u53ca\u4ea4\u4ed8\u8bf4\u660e\u5b58\u5728\u3002",
       "statement": "\u73b0\u6709\u547d\u4ee4\u3001Hook\u3001\u5b89\u88c5\u5668\u548c schema 1 \u76ee\u6807\u7ee7\u7eed\u5de5\u4f5c\uff0c\u5168\u90e8\u6587\u6863\u51c6\u786e\u8bf4\u660e v0.3 \u7684\u4e24\u6863\u6d41\u7a0b\u3001\u65b0\u547d\u4ee4\u3001\u9650\u5236\u548c\u56de\u6eda\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-07-30T06:49:52Z",
+      "status": "VERIFIED",
+      "updated_at": "2026-07-30T07:12:09Z",
       "verified_by": [
         "TESTS",
         "COMPILE",
@@ -145,16 +176,16 @@
       "basis": [
         "\u65e5\u5e38\u590d\u76d8\u9700\u8981\u673a\u5668\u53ef\u8bfb\u6700\u5c0f\u4e8b\u4ef6\u6d41\uff0c\u4f46\u7528\u6237\u660e\u786e\u62d2\u7edd\u5927\u578b\u5e73\u53f0"
       ],
-      "evidence": null,
+      "evidence": "TESTS \u8986\u76d6\u4e8b\u4ef6\u767d\u540d\u5355\u3001\u5e76\u53d1\u8ffd\u52a0\u3001\u654f\u611f\u6587\u672c\u6392\u9664\u3001\u635f\u574f\u672b\u884c\u6062\u590d\u3001\u65e7\u76ee\u6807\u548c report\u3002",
       "failure_modes": [
         "\u5e76\u53d1\u8ffd\u52a0\u4e0d\u5f97\u4ea4\u9519\uff1b\u6700\u540e\u4e00\u884c\u635f\u574f\u4e0d\u5f97\u4f7f\u6574\u4e2a report \u5931\u8d25\uff1b\u539f\u59cb verifier \u8f93\u51fa\u548c\u73af\u5883\u53d8\u91cf\u503c\u4e0d\u5f97\u5199\u5165\u4e8b\u4ef6\uff1b\u65e0\u4e8b\u4ef6\u65e7\u76ee\u6807\u5fc5\u987b\u53ef\u62a5\u544a\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
       "kind": "must",
       "proves": "\u81ea\u52a8\u5316\u6d4b\u8bd5\u8bc1\u660e\u4e8b\u4ef6\u987a\u5e8f\u3001\u5b57\u6bb5\u5141\u8bb8\u5217\u8868\u3001\u635f\u574f\u5c3e\u884c\u5bb9\u9519\u548c report \u805a\u5408\u7ed3\u679c\u3002",
       "statement": "\u72b6\u6001\u53d8\u5316\u548c verifier \u6267\u884c\u4ea7\u751f\u6700\u5c0f events.jsonl\uff0creport \u6587\u672c/JSON \u80fd\u91cd\u5efa\u65f6\u95f4\u7ebf\u3001\u5931\u8d25\u7edf\u8ba1\u3001\u8986\u76d6\u548c\u98ce\u9669\uff0c\u4e14\u4e8b\u4ef6\u4e0d\u5305\u542b\u539f\u59cb\u8f93\u51fa\u6216\u79d8\u5bc6\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-07-30T06:49:51Z",
+      "status": "VERIFIED",
+      "updated_at": "2026-07-30T07:12:09Z",
       "verified_by": [
         "TESTS"
       ]
@@ -163,16 +194,16 @@
       "basis": [
         "\u7528\u6237\u8981\u6c42\u65e5\u5e38\u8f7b\u4fbf\u4f46\u4e0d\u727a\u7272\u5b8c\u6210 Gate\uff0c\u5f53\u524d plan-check \u5b9e\u73b0\u4e0e\u65e7\u72b6\u6001\u517c\u5bb9\u8981\u6c42"
       ],
-      "evidence": null,
+      "evidence": "TESTS \u8986\u76d6 standard/strict\u3001\u9ed8\u8ba4\u503c\u3001\u65e7\u76ee\u6807 strict \u56de\u9000\u53ca\u7ef4\u5ea6\u95e8\u69db\u3002",
       "failure_modes": [
         "standard \u7f3a\u5c11\u6838\u5fc3\u7ef4\u5ea6\u5fc5\u987b\u62d2\u7edd\uff1bstrict \u7f3a\u5c11\u4efb\u4e00\u516b\u7ef4\u5fc5\u987b\u62d2\u7edd\uff1b\u65e7\u72b6\u6001\u4e0d\u5f97\u88ab\u9ed8\u8ba4\u4e3a standard\uff1bprofile \u975e\u6cd5\u503c\u5fc5\u987b\u62d2\u7edd\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
       "kind": "must",
       "proves": "\u81ea\u52a8\u5316\u6d4b\u8bd5\u8bc1\u660e\u4e24\u6863 plan-check \u7684\u5fc5\u9700\u7ef4\u5ea6\u3001\u9ed8\u8ba4\u503c\u3001\u65e7\u72b6\u6001\u89e3\u91ca\u548c\u6838\u5fc3\u786c\u95e8\u69db\u7b26\u5408\u8bbe\u8ba1\u3002",
       "statement": "\u65b0\u76ee\u6807\u9ed8\u8ba4\u4f7f\u7528 standard profile\uff0c\u663e\u5f0f strict \u4fdd\u7559\u73b0\u6709\u516b\u7ef4\u5408\u540c\uff0c\u65e7\u72b6\u6001\u7f3a\u5c11 profile \u65f6\u6309 strict \u5904\u7406\uff1b\u4e24\u6863\u90fd\u4fdd\u7559 MUST\u3001required verifier\u3001\u5931\u8d25\u6a21\u5f0f\u3001\u660e\u786e\u6279\u51c6\u548c\u6700\u7ec8\u9a8c\u6536\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-07-30T06:49:51Z",
+      "status": "VERIFIED",
+      "updated_at": "2026-07-30T07:11:55Z",
       "verified_by": [
         "TESTS"
       ]
@@ -181,16 +212,16 @@
       "basis": [
         "\u5f53\u524d\u539f\u5b50\u66ff\u6362\u6ca1\u6709\u9501/CAS\u4e14 branch \u4ec5\u8bb0\u5f55\u4e0d\u6267\u884c\uff0c\u5355\u5199\u8005\u5b89\u5168\u8fb9\u754c\u9700\u8981\u4ee3\u7801\u4fdd\u8bc1"
       ],
-      "evidence": null,
+      "evidence": "TESTS \u8986\u76d6\u6587\u4ef6\u9501\u5e76\u53d1\u66f4\u65b0\u3001revision CAS\u3001worktree \u4e0e\u9519\u8bef\u5206\u652f\u62d2\u7edd\u3002",
       "failure_modes": [
         "\u4e24\u4e2a\u5e76\u53d1\u66f4\u65b0\u4e0d\u5f97\u8986\u76d6\u5f7c\u6b64\uff1b\u624b\u5de5\u65e7 revision \u5fc5\u987b\u89e6\u53d1\u51b2\u7a81\uff1bdetached HEAD\u3001\u8def\u5f84\u53d8\u5316\u548c\u5206\u652f\u53d8\u5316\u5fc5\u987b\u660e\u786e\u5904\u7406\uff1b\u65e7\u76ee\u6807\u8bfb\u53d6\u4e0d\u5f97\u4e2d\u65ad\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
       "kind": "must",
       "proves": "\u5e76\u53d1\u548c worktree \u6d4b\u8bd5\u8bc1\u660e\u6ca1\u6709\u4e22\u5931\u66f4\u65b0\uff0crevision \u51b2\u7a81\u88ab\u62d2\u7edd\uff0c\u9519\u8bef\u5206\u652f\u4e0d\u80fd verify \u6216 apply gate\u3002",
       "statement": "\u5e76\u53d1\u63a7\u5236\u5668\u5199\u5165\u7531\u6587\u4ef6\u9501\u4e32\u884c\u5316\uff0cstate_revision \u4ee5 CAS \u5355\u8c03\u9012\u589e\uff1b\u7ed1\u5b9a\u540e\u7684\u76ee\u6807\u53ea\u80fd\u5728\u5339\u914d canonical root\u3001Git dir \u548c branch \u7684 worktree \u63a8\u8fdb\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-07-30T06:49:51Z",
+      "status": "VERIFIED",
+      "updated_at": "2026-07-30T07:12:09Z",
       "verified_by": [
         "TESTS"
       ]
@@ -199,16 +230,16 @@
       "basis": [
         "\u7528\u6237\u63d0\u51fa\u8d81\u624b\u7684\u65e5\u5e38\u6062\u590d\u4f53\u9a8c\uff0c\u5f53\u524d status \u4e0e SessionStart \u7684\u4fe1\u606f\u7f3a\u53e3"
       ],
-      "evidence": null,
+      "evidence": "TESTS \u8986\u76d6 summary \u6587\u672c/JSON\u3001\u65e0\u6d3b\u52a8\u76ee\u6807\u548c SessionStart \u6709\u754c\u6062\u590d\u3002",
       "failure_modes": [
         "\u65e0\u6d3b\u52a8\u76ee\u6807\u5fc5\u987b\u53cb\u597d\u8fd4\u56de\uff1b\u7f3a\u5931\u53ef\u9009\u5b57\u6bb5\u4e0d\u5f97\u5d29\u6e83\uff1b\u957f\u6587\u672c\u5fc5\u987b\u622a\u65ad\uff1b\u4e0d\u5f97\u6ce8\u5165\u5b8c\u6574\u6d4b\u8bd5\u8f93\u51fa\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
       "kind": "must",
       "proves": "\u81ea\u52a8\u5316\u6d4b\u8bd5\u8bc1\u660e\u6587\u672c/JSON \u5b57\u6bb5\u3001\u65e0\u6d3b\u52a8\u76ee\u6807\u3001\u5931\u8d25\u72b6\u6001\u548c Hook \u6062\u590d\u8f93\u51fa\u5b8c\u6574\u4e14\u6709\u754c\u3002",
       "statement": "summary \u6587\u672c\u548c JSON \u7a33\u5b9a\u5c55\u793a\u76ee\u6807\u3001profile\u3001\u72b6\u6001\u3001MUST \u8fdb\u5ea6\u3001\u91cc\u7a0b\u7891\u3001\u963b\u585e\u6216\u6700\u8fd1\u5931\u8d25\u3001Git SHA \u4e0e\u4e0b\u4e00\u6b65\uff0cSessionStart \u590d\u7528\u540c\u4e00\u6458\u8981\u4e14\u4e0d\u8d85\u51fa\u4e0a\u4e0b\u6587\u9650\u5236\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-07-30T06:49:51Z",
+      "status": "VERIFIED",
+      "updated_at": "2026-07-30T07:12:09Z",
       "verified_by": [
         "TESTS"
       ]
@@ -217,16 +248,16 @@
       "basis": [
         "\u5f53\u524d subprocess timeout \u53ef\u80fd\u9057\u7559\u5b50\u8fdb\u7a0b\uff0c\u8de8\u73af\u5883\u56de\u6267\u7f3a\u5c11\u6700\u5c0f\u590d\u73b0\u4fe1\u606f"
       ],
-      "evidence": null,
+      "evidence": "TESTS \u8986\u76d6\u8fdb\u7a0b\u7ec4\u8d85\u65f6 TERM/KILL\u3001\u5b50\u8fdb\u7a0b\u6e05\u7406\u3001\u73af\u5883\u6307\u7eb9\u548c dirty-tree \u89c4\u5219\u3002",
       "failure_modes": [
         "TERM \u65e0\u6548\u65f6\u5fc5\u987b\u5347\u7ea7 KILL\uff1b\u65e0 lockfile \u65f6\u6b63\u5e38\u5de5\u4f5c\uff1b\u73af\u5883\u6307\u7eb9\u4e0d\u5f97\u5305\u542b\u73af\u5883\u53d8\u91cf\u503c\uff1b\u6d4b\u8bd5\u4fee\u6539\u4ea7\u54c1\u6811\u4ecd\u5fc5\u987b FAIL\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "89c8a7fe286a28d95a2aff38e24a6c5a81677a73",
       "kind": "must",
       "proves": "\u81ea\u52a8\u5316\u6d4b\u8bd5\u7528\u6d3e\u751f\u5b50\u8fdb\u7a0b\u9a8c\u8bc1\u8d85\u65f6\u540e\u65e0\u5b58\u6d3b\u8fdb\u7a0b\uff0c\u5e76\u68c0\u67e5\u56de\u6267\u5305\u542b\u5141\u8bb8\u7684\u73af\u5883\u5b57\u6bb5\u548c lockfile \u54c8\u5e0c\u3002",
       "statement": "verifier \u8d85\u65f6\u65f6\u7ec8\u6b62\u6574\u68f5\u5b50\u8fdb\u7a0b\u6811\u5e76\u8bb0\u5f55\u5931\u8d25\u3001\u65f6\u957f\u3001timeout/\u4fe1\u53f7\u548c\u8f7b\u91cf\u73af\u5883\u6307\u7eb9\uff0c\u540c\u65f6\u4fdd\u6301 Git \u65b0\u9c9c\u5ea6\u4e0e dirty-tree \u89c4\u5219\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-07-30T06:49:51Z",
+      "status": "VERIFIED",
+      "updated_at": "2026-07-30T07:12:09Z",
       "verified_by": [
         "TESTS"
       ]
@@ -235,9 +266,15 @@
   "resume_status": null,
   "risks": {},
   "schema_version": 1,
-  "status": "EXECUTING",
+  "state_revision": 14,
+  "status": "READY_FOR_ACCEPTANCE",
   "stop_repeat_count": 0,
   "title": "Goal Flow v0.3 \u7cbe\u5de7\u65e5\u7528\u7248",
-  "updated_at": "2026-07-30T06:56:13Z",
-  "wait_reason": null
+  "updated_at": "2026-07-30T07:12:10Z",
+  "wait_reason": null,
+  "worktree_binding": {
+    "branch": "codex/goal-flow-v0.3",
+    "git_dir": "/Users/sd/workspace/ai-project/longtask-harness/.git",
+    "root": "/Users/sd/workspace/ai-project/longtask-harness"
+  }
 }
