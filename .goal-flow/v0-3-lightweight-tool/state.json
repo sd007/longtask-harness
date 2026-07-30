@@ -37,7 +37,7 @@
     }
   },
   "created_at": "2026-07-30T06:48:03Z",
-  "current_milestone": "M1",
+  "current_milestone": "M2",
   "dimensions": {
     "documentation-deliverables": {
       "rationale": "README\u3001\u8bbe\u8ba1\u3001\u4f7f\u7528\u548c\u5b89\u88c5\u8bf4\u660e\u5fc5\u987b\u53cd\u6620\u65b0 profile\u3001\u547d\u4ee4\u3001\u517c\u5bb9\u6027\u4e0e\u9650\u5236\u3002",
@@ -117,8 +117,9 @@
   "goal_revision": 1,
   "last_stop_fingerprint": null,
   "last_verified_commit": null,
-  "next_action": "\u5b9e\u73b0 standard/strict profile\u3001summary \u4e0e SessionStart \u6062\u590d\u6458\u8981",
+  "next_action": "\u5b9e\u73b0\u63a7\u5236\u5668\u9501\u3001CAS\u3001worktree \u7ed1\u5b9a\u3001\u8fdb\u7a0b\u7ec4\u8d85\u65f6\u6cbb\u7406\u548c\u73af\u5883\u6307\u7eb9",
   "no_progress_count": 0,
+  "profile": "strict",
   "requirements": {
     "REQ-COMPAT-06": {
       "basis": [
@@ -237,6 +238,6 @@
   "status": "EXECUTING",
   "stop_repeat_count": 0,
   "title": "Goal Flow v0.3 \u7cbe\u5de7\u65e5\u7528\u7248",
-  "updated_at": "2026-07-30T06:51:30Z",
+  "updated_at": "2026-07-30T06:56:13Z",
   "wait_reason": null
 }
