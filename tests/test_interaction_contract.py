@@ -29,6 +29,8 @@ class InteractionContractTests(unittest.TestCase):
         for label in ("批准并执行", "修改方案", "接受交付", "需要修改", "自然语言"):
             self.assertIn(label, self.skill + self.usage)
         self.assertIn("fixed phrase", self.skill)
+        self.assertIn("goal_flow_approval", self.skill + self.usage)
+        self.assertIn("elicitation/create", self.skill + self.planning)
 
 
 if __name__ == "__main__":

@@ -56,10 +56,12 @@ class InstallerTests(unittest.TestCase):
         result = self.run_script(INSTALL, "--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.home / "plugins" / "goal-flow" / ".codex-plugin" / "plugin.json").exists())
+        self.assertTrue((self.home / "plugins" / "goal-flow" / ".mcp.json").exists())
         installed_manifest = json.loads(
             (self.home / "plugins" / "goal-flow" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertTrue(installed_manifest["version"].startswith("0.3.0+codex.local-"))
+        self.assertTrue(installed_manifest["version"].startswith("0.4.0+codex.local-"))
+        self.assertEqual(installed_manifest["mcpServers"], "./.mcp.json")
         self.assertEqual([item["name"] for item in self.marketplace()["plugins"]], ["keep-me", "goal-flow"])
 
     def test_dry_run_changes_nothing(self) -> None:

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "goal-flow-approval": {
+      "command": "python3",
+      "args": [
+        "-u",
+        "${PLUGIN_ROOT}/mcp/approval_server.py"
+      ]
+    }
+  }
+}

@@ -49,7 +49,7 @@ Before presenting the final plan for approval:
 4. Register each exact verifier command as a `PENDING` required check.
 5. Assess the profile's acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`: four core dimensions for `standard`, all eight for `strict`.
 6. Run `plan-check`. Resolve every gap, then show a visible **Decision check** with three sections: `已自动确定`, `建议默认`, and `仍需用户决定`. If the last section is empty, explicitly say that no high-impact user decision remains. If it is non-empty, ask the smallest set of high-impact questions before approval and include a recommended default and consequence.
-7. Present the plan using native approval controls when available: `批准并执行` or `修改方案`. In a CLI, phone, or no-UI context, ask for a natural-language decision and do not require a fixed phrase. Only after explicit approval, internally run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
+7. When the `goal_flow_approval` MCP tool is available, call it with the current `root`, `goal_id`, `revision`, plan summary, and first milestone action. It opens the native elicitation control with `批准并执行` or `修改方案` and performs the controller transition only after an explicit user choice. In a CLI, phone, or no-MCP context, ask for a natural-language decision and do not require a fixed phrase; only then internally run `approve --user-approved --approved-by <identity> --next-action <first milestone action>`.
 8. Create or use an isolated `codex/goal-flow-<slug>` branch or worktree while preserving user changes, then run `bind-worktree`.
 9. Commit the approved plan and acceptance-contract checkpoint.
 
@@ -83,11 +83,11 @@ Read [verification.md](references/verification.md) completely before final revie
 - Never mark a risk `ACCEPTED` unless the user explicitly accepts it; record their identity with `--accepted-by`.
 - Do not claim a probability when confidence is `UNCALIBRATED`.
 
-Only present `READY_FOR_ACCEPTANCE` after `gate --apply` succeeds. Evidence remains current across commits that change only `.goal-flow/`; any product-tree change invalidates it. The user, not the agent, decides acceptance. Use native `接受交付` or `需要修改` controls when available; otherwise accept a natural-language decision without requiring a fixed sentence. Only after explicit acceptance, internally run `accept --user-accepted --accepted-by <identity>`; otherwise use `reject` with the user's reason.
+Only present `READY_FOR_ACCEPTANCE` after `gate --apply` succeeds. Evidence remains current across commits that change only `.goal-flow/`; any product-tree change invalidates it. The user, not the agent, decides acceptance. When the `goal_flow_approval` MCP tool is available, call it with the delivery summary; it opens `接受交付` or `需要修改` and performs `accept` or `reject` only after the user's explicit choice. Otherwise accept a natural-language decision without requiring a fixed sentence, and only then internally run `accept --user-accepted --accepted-by <identity>` or `reject` with the user's reason.
 
 ## Interaction contract
 
-Controller flags are internal compatibility interfaces, not user-facing syntax. Show the plan decision check before approval, prefer buttons for `批准并执行` / `修改方案` and `接受交付` / `需要修改`, and fall back to natural-language confirmation when the host does not expose buttons. A button or natural-language answer may only translate into the existing controller transition after the deterministic plan or delivery Gate has passed.
+Controller flags are internal compatibility interfaces, not user-facing syntax. Show the plan decision check before approval, call the bundled `goal_flow_approval` MCP tool when available so the host can render real elicitation controls, and use `批准并执行` / `修改方案` plus `接受交付` / `需要修改`. Fall back to natural-language confirmation when the host does not expose MCP elicitation. A button or natural-language answer may only translate into the existing controller transition after the deterministic plan or delivery Gate has passed.
 
 ## Control commands
 

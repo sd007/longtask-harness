@@ -80,7 +80,7 @@ Prefer black-box outcomes over implementation details. Include tolerances or thr
 
 Register the criteria, checks, and dimensions, then run `plan-check`. Resolve every reported gap yourself when evidence permits. Present the plan to the user only after it returns `READY_FOR_APPROVAL`.
 
-User approval freezes the exact `goal.md`, criteria definitions, evidence scope, failure modes, basis, dimension assessment, verifier mapping, and check commands. Any material change requires `replan` and new approval.
+User approval freezes the exact `goal.md`, criteria definitions, evidence scope, failure modes, basis, dimension assessment, verifier mapping, and check commands. When the bundled `goal_flow_approval` MCP tool is available, use its `elicitation/create` request so the host can render `批准并执行` and `修改方案`; a declined or cancelled request must not run a controller transition. Any material change requires `replan` and new approval. In hosts without MCP elicitation, retain the natural-language fallback without requiring a fixed phrase.
 
 ## Baseline the environment
 
