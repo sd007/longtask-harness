@@ -1,6 +1,6 @@
 {
   "name": "goal-flow",
-  "version": "0.9.0+codex.20260730100000",
+  "version": "0.10.0+codex.20260731120000",
   "description": "Plan, execute, verify, and deliver long software tasks with evidence-backed gates.",
   "author": {
     "name": "Local developer"

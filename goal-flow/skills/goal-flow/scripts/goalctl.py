@@ -20,11 +20,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
-SUPPORTED_SCHEMA_VERSIONS = {1, SCHEMA_VERSION}
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION}
 REQUIREMENT_STATUSES = {"VERIFIED", "PARTIAL", "UNVERIFIED", "CONTRADICTED"}
 CHECK_STATUSES = {"PASS", "FAIL", "PENDING"}
-RISK_STATUSES = {"OPEN", "MITIGATED", "ACCEPTED"}
+RISK_STATUSES = {"OPEN", "PARTIALLY_MITIGATED", "MITIGATED", "ACCEPTED"}
+EVIDENCE_MODES = {"mock", "simulated", "real"}
+EVIDENCE_MODE_ORDER = {"mock": 0, "simulated": 1, "real": 2}
+CHECK_ROLES = {"component", "goal"}
 RISK_SEVERITIES = {"low", "medium", "high", "critical"}
 RISK_SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 DIMENSION_STATUSES = {"COVERED", "N_A"}
@@ -132,8 +135,13 @@ def controller_lock(root: Path, exclusive: bool):
     if not store.exists() and not exclusive:
         yield
         return
-    store.mkdir(parents=True, exist_ok=True)
-    with (store / "controller.lock").open("a+", encoding="utf-8") as handle:
+    if exclusive:
+        store.mkdir(parents=True, exist_ok=True)
+    lock_path = store / "controller.lock"
+    if not exclusive and not lock_path.exists():
+        yield
+        return
+    with lock_path.open("a+" if exclusive else "r", encoding="utf-8") as handle:
         operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
         fcntl.flock(handle.fileno(), operation)
         try:
@@ -298,6 +306,12 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
         raise GoalFlowError("No active goal")
     directory = goal_dir(root, goal_id)
     state = load_json(directory / "state.json")
+    schema_version = state.get("schema_version", 1)
+    if schema_version != SCHEMA_VERSION:
+        raise GoalFlowError(
+            f"Incompatible Goal Flow schema v{schema_version}; this release requires schema v{SCHEMA_VERSION}. "
+            "Archive the existing .goal-flow directory and run init again. No files were changed."
+        )
     state.setdefault("dimensions", {})
     # Goals created before v0.3 keep the original strict contract.
     state.setdefault("profile", "strict")
@@ -322,8 +336,6 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
     state.setdefault("delivery_feedback", None)
     state.setdefault("delivery_rejection_baseline", None)
     state.setdefault("epoch", None)
-    if state.get("schema_version", 1) < SCHEMA_VERSION:
-        state["schema_version"] = SCHEMA_VERSION
     return goal_id, directory, state
 
 
@@ -499,6 +511,7 @@ def definitions_hash(state: dict[str, Any]) -> str:
                 "proves": value.get("proves"),
                 "failure_modes": sorted(value.get("failure_modes") or []),
                 "basis": sorted(value.get("basis") or []),
+                "minimum_evidence_mode": value.get("minimum_evidence_mode"),
             }
             for key, value in sorted(state.get("requirements", {}).items())
         },
@@ -507,6 +520,11 @@ def definitions_hash(state: dict[str, Any]) -> str:
                 "required": bool(value.get("required")),
                 "command": value.get("command"),
                 "timeout": value.get("timeout"),
+                "role": value.get("role"),
+                "evidence_mode": value.get("evidence_mode"),
+                "covers": sorted(value.get("covers") or []),
+                "proves": value.get("proves"),
+                "limitations": value.get("limitations"),
             }
             for key, value in sorted(state.get("checks", {}).items())
         },
@@ -640,22 +658,46 @@ def product_tree_is_clean(root: Path) -> bool:
     return product_status(root) == ""
 
 
-def evidence_is_fresh(
+def product_status_paths(root: Path) -> list[str]:
+    status = product_status(root)
+    if status is None:
+        return []
+    paths: list[str] = []
+    for line in status.splitlines():
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if path:
+            paths.append(path)
+    return sorted(set(paths))
+
+
+def evidence_freshness(
     root: Path,
     evidence_sha: str | None,
     state: dict[str, Any] | None = None,
-) -> bool:
-    """Evidence stays fresh across audit-only commits and Standard baselines."""
+) -> dict[str, Any]:
+    """Explain whether a receipt still describes the current product tree."""
+    result = {
+        "fresh": False,
+        "reason": None,
+        "invalidated_paths": [],
+        "evidence_sha": evidence_sha,
+    }
     if not evidence_sha or evidence_sha == "UNBORN":
-        return False
+        result["reason"] = "missing evidence commit"
+        return result
     if state is None:
         clean = product_tree_is_clean(root)
     else:
         clean = product_tree_is_acceptable(root, state)
     if not clean:
-        return False
+        result["reason"] = "uncommitted product changes invalidate evidence"
+        result["invalidated_paths"] = product_status_paths(root)
+        return result
     if run_git(root, "merge-base", "--is-ancestor", evidence_sha, "HEAD") is None:
-        return False
+        result["reason"] = "evidence commit is not an ancestor of HEAD"
+        return result
     changed = run_git(
         root,
         "diff",
@@ -666,7 +708,30 @@ def evidence_is_fresh(
         ":(exclude).goal-flow",
         ":(exclude).goal-flow/**",
     )
-    return changed == ""
+    changed_paths = sorted(path for path in (changed or "").splitlines() if path)
+    if changed_paths:
+        result["reason"] = "committed product changes occurred after verification"
+        result["invalidated_paths"] = changed_paths
+        return result
+    result["fresh"] = True
+    result["reason"] = "evidence matches the current product tree"
+    return result
+
+
+def evidence_is_fresh(
+    root: Path,
+    evidence_sha: str | None,
+    state: dict[str, Any] | None = None,
+) -> bool:
+    return bool(evidence_freshness(root, evidence_sha, state)["fresh"])
+
+
+def evidence_mode_satisfies(actual: str | None, minimum: str | None) -> bool:
+    return (
+        actual in EVIDENCE_MODE_ORDER
+        and minimum in EVIDENCE_MODE_ORDER
+        and EVIDENCE_MODE_ORDER[actual] >= EVIDENCE_MODE_ORDER[minimum]
+    )
 
 
 def evidence_is_fresh_after_rejection(item: dict[str, Any], baseline: dict[str, Any] | None) -> bool:
@@ -700,11 +765,42 @@ def verifiers_are_fresh(root: Path, state: dict[str, Any], check_ids: list[str])
 
 
 def risk_is_unresolved(root: Path, state: dict[str, Any], risk: dict[str, Any]) -> bool:
-    if risk.get("status") == "OPEN":
+    if risk.get("status") in {"OPEN", "PARTIALLY_MITIGATED"}:
         return True
     if risk.get("status") == "MITIGATED":
         return not verifiers_are_fresh(root, state, risk.get("verified_by") or [])
     return False
+
+
+def delivery_freshness(root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for req_id, item in state.get("requirements", {}).items():
+        if item.get("kind") == "must" and item.get("status") == "VERIFIED":
+            items.append({"id": req_id, **evidence_freshness(root, item.get("git_sha"), state)})
+    for check_id, item in state.get("checks", {}).items():
+        if item.get("required") and item.get("status") == "PASS":
+            items.append({"id": check_id, **evidence_freshness(root, item.get("git_sha"), state)})
+    stale = [item for item in items if not item["fresh"]]
+    invalidated_paths = sorted({path for item in stale for path in item["invalidated_paths"]})
+    if not items:
+        reason = "no completed delivery evidence"
+    elif stale:
+        reason = "; ".join(sorted({str(item["reason"]) for item in stale}))
+    else:
+        reason = "all completed delivery evidence matches the current product tree"
+    return {
+        "fresh": bool(items) and not stale,
+        "reason": reason,
+        "invalidated_paths": invalidated_paths,
+        "evidence_sha": state.get("last_verified_commit"),
+    }
+
+
+def effective_status(root: Path, state: dict[str, Any]) -> str:
+    stored = str(state.get("status"))
+    if stored == "READY_FOR_ACCEPTANCE" and not delivery_freshness(root, state)["fresh"]:
+        return "VERIFYING"
+    return stored
 
 
 def append_evidence(directory: Path, heading: str, fields: dict[str, Any]) -> None:
@@ -765,14 +861,24 @@ def validate_state(state: dict[str, Any]) -> list[str]:
             errors.append(f"invalid requirement status for {req_id}")
         if item.get("kind") not in {"must", "should"}:
             errors.append(f"invalid requirement kind for {req_id}")
+        if item.get("minimum_evidence_mode") not in EVIDENCE_MODES:
+            errors.append(f"invalid minimum evidence mode for {req_id}")
     for check_id, item in state.get("checks", {}).items():
         if item.get("status") not in CHECK_STATUSES:
             errors.append(f"invalid check status for {check_id}")
+        if item.get("role") not in CHECK_ROLES:
+            errors.append(f"invalid check role for {check_id}")
+        if item.get("evidence_mode") not in EVIDENCE_MODES:
+            errors.append(f"invalid check evidence mode for {check_id}")
+        if not isinstance(item.get("covers"), list):
+            errors.append(f"invalid check requirement coverage for {check_id}")
     for risk_id, item in state.get("risks", {}).items():
         if item.get("status") not in RISK_STATUSES:
             errors.append(f"invalid risk status for {risk_id}")
         if item.get("severity") not in RISK_SEVERITIES:
             errors.append(f"invalid risk severity for {risk_id}")
+        if item.get("minimum_evidence_mode") not in EVIDENCE_MODES:
+            errors.append(f"invalid risk minimum evidence mode for {risk_id}")
     for dimension_id, item in state.get("dimensions", {}).items():
         if dimension_id not in ACCEPTANCE_DIMENSIONS:
             errors.append(f"invalid acceptance dimension: {dimension_id}")
@@ -1064,11 +1170,52 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
             reasons.append(f"Required check {check_id} must be PENDING at approval")
         if check_id not in goal_text or str(check.get("command")) not in goal_text:
             reasons.append(f"Required check {check_id} and its exact command must appear in goal.md")
+        if check.get("role") not in CHECK_ROLES:
+            reasons.append(f"Required check {check_id} must declare --role")
+        if check.get("evidence_mode") not in EVIDENCE_MODES:
+            reasons.append(f"Required check {check_id} must declare --evidence-mode")
+        if not substantive(check.get("proves")):
+            reasons.append(f"Required check {check_id} must state what it proves")
+        if not substantive(check.get("limitations")):
+            reasons.append(f"Required check {check_id} must state its limitations")
+
+    needs_goal_check = (
+        resolve_harness(state) in {"goal-flow", "strict"}
+        or bool(state.get("harness", {}).get("behavior_change"))
+    )
+    valid_goal_checks = [
+        check for check in required_checks.values()
+        if check.get("role") == "goal"
+        and check.get("evidence_mode") == "real"
+        and any(req_id in must for req_id in (check.get("covers") or []))
+    ]
+    if needs_goal_check and not valid_goal_checks:
+        reasons.append("Register at least one required goal check covering the real user main path")
+    for check_id, check in required_checks.items():
+        unknown = [req_id for req_id in (check.get("covers") or []) if req_id not in requirements]
+        if unknown:
+            reasons.append(f"Required check {check_id} covers unknown requirements: {', '.join(unknown)}")
 
     lightweight_standard = is_lightweight_standard(state)
     for req_id, criterion in must.items():
         if not substantive(criterion.get("statement")):
             reasons.append(f"MUST criterion {req_id} lacks an observable outcome")
+        covering = [
+            check_id for check_id, check in required_checks.items()
+            if req_id in (check.get("covers") or [])
+        ]
+        if not covering:
+            reasons.append(f"MUST criterion {req_id} has no required check declaring coverage")
+        minimum_mode = criterion.get("minimum_evidence_mode")
+        if minimum_mode not in EVIDENCE_MODES:
+            reasons.append(f"MUST criterion {req_id} must declare --minimum-evidence-mode")
+        elif minimum_mode == "real" and covering and not any(
+            evidence_mode_satisfies(required_checks[check_id].get("evidence_mode"), minimum_mode)
+            for check_id in covering
+        ):
+            reasons.append(
+                f"MUST criterion {req_id} requires {minimum_mode} evidence but linked checks are weaker"
+            )
         if lightweight_standard:
             verifiers = criterion.get("verified_by") or []
             if not verifiers:
@@ -1223,6 +1370,22 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
         item for item in required_checks
         if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"), state)
     ]
+    required_goal_checks = [item for item in required_checks if item.get("role") == "goal"]
+    passing_goal_checks = [
+        item for item in required_goal_checks
+        if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"), state)
+    ]
+    evidence_downgrades = [
+        item for item in must
+        if item.get("status") == "VERIFIED" and not any(
+            check_id in state.get("checks", {})
+            and state["checks"][check_id].get("status") == "PASS"
+            and evidence_mode_satisfies(
+                state["checks"][check_id].get("evidence_mode"), item.get("minimum_evidence_mode")
+            )
+            for check_id in (item.get("verified_by") or [])
+        )
+    ]
     coverage = round(100 * len(fresh) / len(must)) if must else 0
     check_coverage = round(100 * len(passing_checks) / len(required_checks)) if required_checks else 0
     unresolved_serious = [
@@ -1244,6 +1407,15 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
         item for item in state.get("checks", {}).values()
         if not item.get("required") and item.get("status") == "FAIL"
     ]
+    residual_medium_or_low = [
+        item for item in state.get("risks", {}).values()
+        if risk_is_unresolved(root, state, item) and item.get("severity") in {"low", "medium"}
+    ]
+    goal_check_required = (
+        resolve_harness(state) in {"goal-flow", "strict"}
+        or bool(state.get("harness", {}).get("behavior_change"))
+    )
+    goal_check_ok = not goal_check_required or bool(required_goal_checks) and len(passing_goal_checks) == len(required_goal_checks)
     if (
         coverage == 100
         and check_coverage == 100
@@ -1251,9 +1423,11 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
         and not accepted_serious
         and not contradicted
         and not failed_optional
+        and not evidence_downgrades
+        and goal_check_ok
     ):
         band = "HIGH"
-    elif coverage >= 50 and not unresolved_serious:
+    elif coverage == 100 and check_coverage == 100 and not unresolved_serious and goal_check_ok:
         band = "MEDIUM"
     else:
         band = "LOW"
@@ -1271,6 +1445,9 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
         "must_total": len(must),
         "acceptance_criteria_total": len(must),
         "must_verified_on_current_sha": len(fresh),
+        "goal_check_passed": goal_check_ok,
+        "evidence_downgrades": len(evidence_downgrades),
+        "residual_medium_or_low_risks": len(residual_medium_or_low),
     }
 
 
@@ -1278,9 +1455,16 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
     errors = validate_state(state)
     sha = current_git_sha(root)
     metrics = assurance_payload(root, state, sha)
+    freshness = delivery_freshness(root, state)
+    stored_status = state.get("status")
+    shown_status = effective_status(root, state)
     result: dict[str, Any] = {
         "gate": "WAIT",
-        "status": state.get("status"),
+        "status": shown_status,
+        "stored_status": stored_status,
+        "effective_status": shown_status,
+        "freshness": freshness,
+        "invalidated_paths": freshness["invalidated_paths"],
         "goal_id": state.get("goal_id"),
         "goal_revision": state.get("goal_revision"),
         "git_sha": sha,
@@ -1345,6 +1529,21 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
         if risk_is_unresolved(root, state, value)
         and value.get("severity") in {"high", "critical"}
     ]
+    weak_requirements = [
+        key for key, value in must.items()
+        if value.get("status") == "VERIFIED"
+        and value.get("minimum_evidence_mode") == "real"
+        and not any(
+            check_id in checks
+            and checks[check_id].get("status") == "PASS"
+            and evidence_mode_satisfies(
+                checks[check_id].get("evidence_mode"), value.get("minimum_evidence_mode")
+            )
+            for check_id in (value.get("verified_by") or [])
+        )
+    ]
+    if weak_requirements:
+        incomplete = sorted(set(incomplete + weak_requirements))
     if incomplete or failing_checks or serious_risks:
         result["gate"] = "CONTINUE"
         if incomplete:
@@ -1418,7 +1617,7 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         ]
     )
     dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
-    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\n- Revision: 1\n- Status: PENDING\n- Approved by: pending\n"""
+    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\nApproval state is stored only in state.json.\n"""
     goal_text = goal_text.replace(
         "## Questions requiring user decision\\n\\n",
         "## Decision Check\\n\\n"
@@ -1440,10 +1639,7 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     )
     goal_text = goal_text.replace(f"- Profile: {args.profile}.", f"- Profile: {profile}.", 1)
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
-    (directory / "evidence.md").write_text(
-        f"# Evidence — {args.title}\n\n- Goal revision: 1\n- Confidence: UNCALIBRATED\n",
-        encoding="utf-8",
-    )
+    (directory / "evidence.md").write_text(f"# Evidence — {args.title}\n", encoding="utf-8")
     if behavior_change:
         (directory / "delta.md").write_text(
             """# Behavior Delta
@@ -1492,7 +1688,7 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
             "baseline_product_fingerprint": baseline_product_fingerprint,
             "classification_reasons": classification["reasons"],
         },
-        "contract_version": 2,
+        "contract_version": 3,
         "state_revision": 0,
         "worktree_binding": None,
         "status": "PLANNING",
@@ -1541,6 +1737,8 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
                 "git_sha": current_git_sha(root),
             }
     goal_id, directory, state = load_state(root, args.goal_id)
+    freshness = delivery_freshness(root, state)
+    gate = evaluate_gate(root, directory, state)
     payload = {
         "ok": not validate_state(state),
         "active": True,
@@ -1549,6 +1747,12 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "git_sha": current_git_sha(root),
         "design_drift": design_drift(directory, state),
         "validation_errors": validate_state(state),
+        "stored_status": state.get("status"),
+        "effective_status": effective_status(root, state),
+        "status": effective_status(root, state),
+        "gate": gate.get("gate"),
+        "freshness": freshness,
+        "invalidated_paths": freshness["invalidated_paths"],
         "state": state,
     }
     if not state.get("approved"):
@@ -1619,6 +1823,14 @@ def read_events(directory: Path) -> tuple[list[dict[str, Any]], list[str]]:
 def append_command_event(
     root: Path, args: argparse.Namespace, payload: dict[str, Any]
 ) -> None:
+    lifecycle_commands = {
+        "init", "approve", "verify", "replan", "pause", "resume",
+        "block", "cancel", "gate", "accept", "reject",
+    }
+    if args.command not in lifecycle_commands:
+        return
+    if args.command == "gate" and not payload.get("state_changed"):
+        return
     state = payload.get("state")
     if not isinstance(state, dict):
         explicit = payload.get("goal_id") or getattr(args, "goal_id", None)
@@ -1630,8 +1842,6 @@ def append_command_event(
     if not goal_id:
         return
     event_name = args.command.replace("-", "_")
-    if args.command == "record":
-        event_name = f"record_{args.record_type}"
     result = None
     reason = None
     if args.command == "verify":
@@ -1682,6 +1892,8 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         failure_class = item.get("failure_class") or "unknown"
         recent_failure = concise(f"{check_id} [{failure_class}]: {item.get('summary') or 'check failed'}")
     blocker = concise(state.get("wait_reason")) if state.get("status") in WAIT_STATUSES else None
+    freshness = delivery_freshness(root, state)
+    gate = evaluate_gate(root, goal_dir(root, goal_id), state)
     payload = {
         "ok": not validate_state(state),
         "active": True,
@@ -1690,7 +1902,12 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         "profile": state.get("profile", "strict"),
         "harness": compact_harness(state),
         "context_excerpt": context_excerpt(root),
-        "status": state.get("status"),
+        "status": effective_status(root, state),
+        "stored_status": state.get("status"),
+        "effective_status": effective_status(root, state),
+        "gate": gate.get("gate"),
+        "freshness": freshness,
+        "invalidated_paths": freshness["invalidated_paths"],
         "must_verified": len(verified),
         "must_total": len(must),
         "milestone": state.get("current_milestone"),
@@ -1704,7 +1921,8 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         f"Profile: {payload['profile']}",
         f"Harness: {payload['harness'].get('mode', 'goal-flow')}"
         + (" (behavior change)" if payload['harness'].get("behavior_change") else ""),
-        f"Status: {payload['status']}",
+        f"Status: {payload['status']} (stored: {payload['stored_status']})",
+        f"Gate: {payload['gate']}",
         f"Progress: {payload['must_verified']}/{payload['must_total']} MUST verified",
         f"Milestone: {payload['milestone'] or '-'}",
     ]
@@ -1712,6 +1930,8 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         lines.append(f"Blocked by: {blocker}")
     elif recent_failure:
         lines.append(f"Recent failure: {recent_failure}")
+    if payload["invalidated_paths"]:
+        lines.append(f"Invalidated by: {', '.join(payload['invalidated_paths'])}")
     lines.extend([
         f"Git: {payload['git_sha']}",
         f"Next: {payload['next_action'] or '-'}",
@@ -1745,7 +1965,8 @@ def build_report(
             "id": requirement_id,
             "kind": item.get("kind"),
             "status": item.get("status"),
-            "fresh": evidence_is_fresh(root, item.get("git_sha"), state),
+            "freshness": evidence_freshness(root, item.get("git_sha"), state),
+            "minimum_evidence_mode": item.get("minimum_evidence_mode"),
         }
         for requirement_id, item in sorted(state.get("requirements", {}).items())
     ]
@@ -1759,6 +1980,11 @@ def build_report(
             "timed_out": bool(item.get("timed_out")),
             "termination": item.get("termination"),
             "git_sha": item.get("git_sha"),
+            "role": item.get("role"),
+            "evidence_mode": item.get("evidence_mode"),
+            "covers": item.get("covers") or [],
+            "proves": item.get("proves"),
+            "limitations": item.get("limitations"),
         }
         for check_id, item in sorted(state.get("checks", {}).items())
     ]
@@ -1767,6 +1993,7 @@ def build_report(
             "id": risk_id,
             "status": item.get("status"),
             "severity": item.get("severity"),
+            "residual_risk": item.get("residual_risk"),
         }
         for risk_id, item in sorted(state.get("risks", {}).items())
     ]
@@ -1775,18 +2002,65 @@ def build_report(
         item.get("event") == "verify" and item.get("result") == "FAIL"
         for item in events
     )
+    rejections = sum(item.get("event") == "reject" for item in events)
+    verification_runtime_ms = sum(
+        int(item.get("duration_ms") or 0) for item in events if item.get("event") == "verify"
+    )
+    created_at = state.get("created_at")
+    try:
+        wall_time_seconds = max(
+            0,
+            round((datetime.now(timezone.utc) - datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))).total_seconds()),
+        )
+    except (TypeError, ValueError):
+        wall_time_seconds = None
+    freshness = delivery_freshness(root, state)
+    requirement_map = state.get("requirements", {})
+    check_map = state.get("checks", {})
+    def declared_evidence_met(requirement_id: str) -> bool:
+        item = requirement_map[requirement_id]
+        return any(
+            check_id in check_map
+            and evidence_mode_satisfies(
+                check_map[check_id].get("evidence_mode"), item.get("minimum_evidence_mode")
+            )
+            for check_id in (item.get("verified_by") or [])
+        )
+    proved = [
+        item["id"] for item in requirements
+        if item["status"] == "VERIFIED" and item["freshness"]["fresh"] and declared_evidence_met(item["id"])
+    ]
+    partially_proved = [
+        item["id"] for item in requirements
+        if item["status"] == "PARTIAL"
+        or item["status"] == "VERIFIED" and item["freshness"]["fresh"] and not declared_evidence_met(item["id"])
+    ]
+    not_proved = [item["id"] for item in requirements if item["id"] not in proved + partially_proved]
+    residual_risks = [item for item in risks if item["status"] != "MITIGATED"]
     payload = {
         "ok": not validate_state(state),
         "active": active_goal_id(root) == goal_id if active_file(root).exists() else False,
         "goal_id": goal_id,
         "title": state.get("title") or goal_id,
         "profile": state.get("profile", "strict"),
-        "status": state.get("status"),
+        "status": effective_status(root, state),
+        "stored_status": state.get("status"),
+        "effective_status": effective_status(root, state),
+        "gate": evaluate_gate(root, directory, state).get("gate"),
+        "freshness": freshness,
+        "invalidated_paths": freshness["invalidated_paths"],
         "git_sha": sha,
         "milestone": state.get("current_milestone"),
         "assurance": metrics,
         "attempts": attempts,
         "failures": failures,
+        "rejections": rejections,
+        "wall_time_seconds": wall_time_seconds,
+        "verification_runtime_ms": verification_runtime_ms,
+        "proved": proved,
+        "partially_proved": partially_proved,
+        "not_proved": not_proved,
+        "residual_risks": residual_risks,
         "requirements": requirements,
         "checks": checks,
         "risks": risks,
@@ -1798,7 +2072,8 @@ def build_report(
         "",
         f"- Goal: {goal_id}",
         f"- Profile: {payload['profile']}",
-        f"- Status: {payload['status']}",
+        f"- Status: {payload['status']} (stored: {payload['stored_status']})",
+        f"- Gate: {payload['gate']}",
         f"- Git: {sha}",
         f"- Milestone: {payload['milestone'] or '-'}",
         "",
@@ -1806,9 +2081,17 @@ def build_report(
         "",
         f"- MUST requirements: {metrics['must_verified_on_current_sha']}/{metrics['must_total']}",
         f"- Required checks: {metrics['required_check_coverage']}%",
-        f"- Verification attempts/failures: {attempts}/{failures}",
+        f"- Verification attempts/failures/rejections: {attempts}/{failures}/{rejections}",
+        f"- Wall time / verification runtime: {wall_time_seconds if wall_time_seconds is not None else '-'}s / {verification_runtime_ms}ms",
         f"- Open risks: {metrics['open_risks']} ({metrics['open_high_or_critical_risks']} high/critical)",
         f"- Assurance: {metrics['assurance']} ({metrics['confidence']})",
+        "",
+        "## Delivery conclusion",
+        "",
+        f"- Proved: {', '.join(proved) or 'none'}",
+        f"- Partially proved: {', '.join(partially_proved) or 'none'}",
+        f"- Not proved: {', '.join(not_proved) or 'none'}",
+        f"- Residual risks: {', '.join(item['id'] for item in residual_risks) or 'none'}",
         "",
         "## Timeline",
         "",
@@ -1935,7 +2218,6 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     state["worktree_binding"] = binding
     state["branch"] = binding["branch"]
     save_state(directory, state)
-    append_evidence(directory, "Worktree bound", binding)
     return {"ok": True, "message": "Worktree bound", "binding": binding, "state": state}
 
 
@@ -2013,6 +2295,9 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         proves = args.proves or prior.get("proves")
         failure_modes = args.failure_mode or prior.get("failure_modes") or []
         basis = args.basis or prior.get("basis") or []
+        minimum_evidence_mode = args.minimum_evidence_mode or prior.get("minimum_evidence_mode")
+        if minimum_evidence_mode not in EVIDENCE_MODES:
+            raise GoalFlowError("Requirements need --minimum-evidence-mode: mock, simulated, or real")
         if state.get("approved"):
             if not prior:
                 raise GoalFlowError("Approved requirement set is frozen; run replan before adding one")
@@ -2026,6 +2311,8 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
                 raise GoalFlowError("Approved failure modes are frozen; run replan to change them")
             if sorted(basis) != sorted(prior.get("basis") or []):
                 raise GoalFlowError("Approved acceptance basis is frozen; run replan to change it")
+            if minimum_evidence_mode != prior.get("minimum_evidence_mode"):
+                raise GoalFlowError("Approved requirement evidence level is frozen; run replan to change it")
         if args.status == "VERIFIED":
             invalid = [
                 check_id for check_id in verified_by
@@ -2036,6 +2323,16 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             if not verified_by or invalid:
                 suffix = f": {', '.join(invalid)}" if invalid else ""
                 raise GoalFlowError(f"VERIFIED requirements need fresh passing --verified-by checks{suffix}")
+            weak = [
+                check_id for check_id in verified_by
+                if not evidence_mode_satisfies(
+                    state["checks"][check_id].get("evidence_mode"), minimum_evidence_mode
+                )
+            ]
+            if weak and minimum_evidence_mode == "real":
+                raise GoalFlowError(
+                    f"VERIFIED requirement needs {minimum_evidence_mode} evidence; weaker checks: {', '.join(weak)}"
+                )
             linked_shas = {
                 state["checks"][check_id].get("git_sha")
                 for check_id in verified_by
@@ -2055,23 +2352,13 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "proves": proves,
             "failure_modes": failure_modes,
             "basis": basis,
+            "minimum_evidence_mode": minimum_evidence_mode,
             "status": args.status,
             "evidence": args.evidence,
             "git_sha": sha if args.status != "UNVERIFIED" else None,
             "updated_at": now(),
             "updated_at_ns": time.time_ns(),
         }
-        append_evidence(directory, f"Requirement {args.id}", {
-            "status": args.status,
-            "statement": state["requirements"][args.id]["statement"],
-            "evidence": args.evidence,
-            "Git SHA": state["requirements"][args.id]["git_sha"],
-            "verified by": ", ".join(verified_by),
-            "what evidence proves": proves,
-            "failure modes": "; ".join(failure_modes),
-            "basis": "; ".join(basis),
-            "residual risk": args.risk,
-        })
     elif args.record_type == "check":
         if args.status not in CHECK_STATUSES:
             raise GoalFlowError("Invalid check status")
@@ -2088,17 +2375,16 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "required": args.required,
             "command": args.check_command,
             "timeout": args.timeout,
+            "role": args.role,
+            "evidence_mode": args.evidence_mode,
+            "covers": args.covers_requirement_id or [],
+            "proves": args.proves,
+            "limitations": args.limitations,
             "summary": None,
             "output_digest": None,
             "git_sha": None,
             "updated_at": now(),
         }
-        append_evidence(directory, f"Check {args.id}", {
-            "status": "PENDING",
-            "required": args.required,
-            "command": args.check_command,
-            "timeout": args.timeout,
-        })
     elif args.record_type == "risk":
         if args.status not in RISK_STATUSES:
             raise GoalFlowError("Invalid risk status")
@@ -2107,31 +2393,34 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         if prior and RISK_SEVERITY_ORDER[severity] < RISK_SEVERITY_ORDER[prior["severity"]]:
             raise GoalFlowError("Risk severity cannot be lowered; mitigate or explicitly accept it")
         verified_by = args.verified_by or prior.get("verified_by") or []
+        minimum_evidence_mode = args.minimum_evidence_mode or prior.get("minimum_evidence_mode")
+        if minimum_evidence_mode not in EVIDENCE_MODES:
+            raise GoalFlowError("Risks need --minimum-evidence-mode: mock, simulated, or real")
         if args.status == "ACCEPTED" and not args.accepted_by:
             raise GoalFlowError("Accepted risks require --accepted-by with the approving identity")
-        if args.status == "MITIGATED":
+        if args.status in {"MITIGATED", "PARTIALLY_MITIGATED"}:
             if not args.evidence:
-                raise GoalFlowError("MITIGATED risks require non-empty evidence")
+                raise GoalFlowError("Mitigated risks require non-empty evidence")
             if not verifiers_are_fresh(root, state, verified_by):
-                raise GoalFlowError("MITIGATED risks require fresh PASS checks via --verified-by")
+                raise GoalFlowError("Mitigated risks require fresh PASS checks via --verified-by")
+        effective_risk_status = args.status
+        if args.status == "MITIGATED" and not any(
+            evidence_mode_satisfies(state["checks"][check_id].get("evidence_mode"), minimum_evidence_mode)
+            for check_id in verified_by
+        ):
+            effective_risk_status = "PARTIALLY_MITIGATED"
         state["risks"][args.id] = {
-            "status": args.status,
+            "status": effective_risk_status,
             "severity": severity,
             "description": args.statement or prior.get("description") or args.evidence or args.id,
             "evidence": args.evidence,
             "verified_by": verified_by,
-            "git_sha": current_git_sha(root) if args.status == "MITIGATED" else None,
+            "git_sha": current_git_sha(root) if effective_risk_status in {"MITIGATED", "PARTIALLY_MITIGATED"} else None,
             "accepted_by": args.accepted_by if args.status == "ACCEPTED" else None,
+            "minimum_evidence_mode": minimum_evidence_mode,
+            "residual_risk": args.residual_risk or prior.get("residual_risk"),
             "updated_at": now(),
         }
-        append_evidence(directory, f"Risk {args.id}", {
-            "status": args.status,
-            "severity": severity,
-            "description": state["risks"][args.id]["description"],
-            "evidence": args.evidence,
-            "verified by": ", ".join(verified_by),
-            "accepted by": state["risks"][args.id]["accepted_by"],
-        })
     elif args.record_type == "dimension":
         if state.get("approved"):
             raise GoalFlowError("Approved acceptance dimensions are frozen; run replan to change them")
@@ -2155,13 +2444,8 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "requirement_ids": requirement_ids,
             "updated_at": now(),
         }
-        append_evidence(directory, f"Acceptance dimension {args.id}", {
-            "status": args.status,
-            "rationale": args.rationale,
-            "criteria": ", ".join(requirement_ids),
-        })
     else:
-        append_evidence(directory, "Note", {"message": args.evidence or args.statement})
+        pass
     if args.record_type in {"requirement", "check"} and args.status not in {"UNVERIFIED", "PENDING"}:
         state["last_verified_commit"] = sha
     epoch = state.get("epoch") or {}
@@ -2419,7 +2703,6 @@ def cmd_replan(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     for item in state.get("checks", {}).values():
         item.update({"status": "PENDING", "summary": None, "output_digest": None, "git_sha": None})
     save_state(directory, state)
-    append_evidence(directory, "Replan required", {"new revision": state["goal_revision"], "reason": args.reason})
     return {"ok": True, "message": "Goal returned to planning", "state": state}
 
 
@@ -2474,6 +2757,21 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if state.get("approved") and (args.apply or args.stop_event):
         require_bound_worktree(root, state)
     result = evaluate_gate(root, directory, state)
+    result["state_changed"] = False
+    if args.apply and state["status"] == "READY_FOR_ACCEPTANCE" and design_drift(directory, state):
+        state["resume_status"] = state["status"]
+        state["status"] = "BLOCKED"
+        state["wait_reason"] = "Approved design changed after verification"
+        state["next_action"] = "Run replan and obtain approval for the changed design"
+        save_state(directory, state)
+        result.update({
+            "status": "BLOCKED",
+            "stored_status": "BLOCKED",
+            "effective_status": "BLOCKED",
+            "next_action": state["next_action"],
+            "state_changed": True,
+        })
+        return result
     if args.stop_event and result["gate"] == "CONTINUE":
         fingerprint = state_fingerprint(root, state)
         if fingerprint == state.get("last_stop_fingerprint"):
@@ -2489,6 +2787,9 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             state["status"] = "BLOCKED"
             state["wait_reason"] = result["reasons"][0]
             result["status"] = state["status"]
+            result["stored_status"] = state["status"]
+            result["effective_status"] = state["status"]
+            result["state_changed"] = True
         save_state(directory, state)
     if (
         args.apply
@@ -2509,6 +2810,9 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         result["gate"] = "ACCEPTED"
         result["status"] = "ACCEPTED"
         result["message"] = "Standard Harness delivery completed"
+        result["stored_status"] = "ACCEPTED"
+        result["effective_status"] = "ACCEPTED"
+        result["state_changed"] = True
         return result
     if args.apply and result["gate"] == "READY_FOR_REVIEW" and state["status"] != "READY_FOR_ACCEPTANCE":
         state["status"] = "READY_FOR_ACCEPTANCE"
@@ -2516,12 +2820,25 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         state["last_verified_commit"] = result["git_sha"]
         save_state(directory, state)
         result["status"] = state["status"]
+        result["stored_status"] = state["status"]
+        result["effective_status"] = state["status"]
+        result["state_changed"] = True
     elif args.apply and result["gate"] == "CONTINUE" and state["status"] == "READY_FOR_ACCEPTANCE":
         state["status"] = "VERIFYING"
-        state["next_action"] = "Refresh stale evidence and rerun the delivery gate"
+        invalidated = result.get("invalidated_paths") or []
+        reason = str((result.get("freshness") or {}).get("reason") or "")
+        if "uncommitted" in reason:
+            state["next_action"] = "Clean or commit invalidating product files: " + ", ".join(invalidated)
+        elif invalidated:
+            state["next_action"] = "Rerun affected checks after product changes: " + ", ".join(invalidated)
+        else:
+            state["next_action"] = "Refresh stale evidence and rerun the delivery gate"
         save_state(directory, state)
         result["status"] = state["status"]
+        result["stored_status"] = state["status"]
+        result["effective_status"] = state["status"]
         result["next_action"] = state["next_action"]
+        result["state_changed"] = True
     return result
 
 
@@ -2648,14 +2965,20 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--proves")
     record.add_argument("--failure-mode", action="append")
     record.add_argument("--basis", action="append")
+    record.add_argument("--minimum-evidence-mode", choices=sorted(EVIDENCE_MODES))
     record.add_argument("--status")
     record.add_argument("--evidence")
     record.add_argument("--risk")
     record.add_argument("--git-sha")
     record.add_argument("--command", dest="check_command")
+    record.add_argument("--role", choices=sorted(CHECK_ROLES))
+    record.add_argument("--evidence-mode", choices=sorted(EVIDENCE_MODES))
+    record.add_argument("--covers-requirement-id", action="append")
+    record.add_argument("--limitations")
     record.add_argument("--required", action="store_true")
     record.add_argument("--severity", choices=sorted(RISK_SEVERITIES))
     record.add_argument("--accepted-by")
+    record.add_argument("--residual-risk")
     record.add_argument("--timeout", type=int, default=300)
     record.add_argument("--rationale")
     record.add_argument("--requirement-id", action="append")

@@ -95,6 +95,9 @@ class HookTests(unittest.TestCase):
         self.ctl(
             "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
             "--command", "python3 -c 'raise SystemExit(1)'",
+            "--role", "goal", "--evidence-mode", "real", "--covers-requirement-id", "REQ-001",
+            "--proves", "Exercises the real Stop hook continuation path",
+            "--limitations", "Does not prove host behavior outside this repository fixture",
         )
         self.ctl(
             "record", "requirement", "--id", "REQ-001", "--kind", "must",
@@ -103,6 +106,7 @@ class HookTests(unittest.TestCase):
             "--failure-mode", "The hook returns success while required work is incomplete",
             "--basis", "The requested long-task continuity behavior",
             "--verified-by", "TEST",
+            "--minimum-evidence-mode", "real",
         )
         for dimension in DIMENSIONS:
             if dimension in {"functional", "negative-boundary"}:
