@@ -49,8 +49,8 @@ Before presenting a full Goal Flow or strict plan for approval:
 
 1. Finish the evidence-backed draft. If a high-impact question remains unresolved, ask it with a recommended default and incorporate the answer.
 2. Finish `goal.md`.
-3. Register each criterion as `UNVERIFIED`, including `--proves`, one or more `--failure-mode`, `--basis`, and `--verified-by` values.
-4. Register each exact verifier command as a `PENDING` required check.
+3. Register each criterion as `UNVERIFIED`, including `--minimum-evidence-mode`, `--proves`, one or more `--failure-mode`, `--basis`, and `--verified-by` values.
+4. Register each exact verifier as a `PENDING` required check with `--role`, `--evidence-mode`, `--covers-requirement-id`, `--proves`, and `--limitations`. Full/strict and behavior-change work needs a goal-level check over the real user main path.
 5. Assess acceptance dimensions with `record dimension`, linking covered dimensions to criterion IDs or explaining `N_A`: `functional` for lightweight `standard`, four core dimensions for full `goal-flow` standard, and all eight for `strict`.
 6. Run `plan-check`. Resolve every gap, then show a visible **Decision check** with three sections: `已自动确定`, `建议默认`, and `仍需用户决定`. If the last section is empty, explicitly say that no high-impact user decision remains. If it is non-empty, ask the smallest set of high-impact questions before approval and include a recommended default and consequence.
 7. When an explicit plan or delivery approval is required (full/strict, or behavior-change/medium-risk Standard), call `goal_flow_approval` with the current `root`, `goal_id`, `state_revision`, summary, and next action. The MCP server uses `elicitation/create` to open the native control and performs the transition only after an explicit choice. Stale buttons are rejected; refresh before retrying. In a CLI, phone, or no-MCP context, use natural language without requiring a fixed phrase.
@@ -69,7 +69,7 @@ Read [execution.md](references/execution.md) before coding. Repeat:
 4. **Preflight:** Run targeted checks directly, inspect the diff, and test negative paths while the implementation is still editable.
 5. **Commit:** Commit the coherent implementation candidate so evidence can bind to an immutable SHA. Use the repository's existing commit convention when one exists; otherwise use the current conversation language for the subject/body (for example, a Chinese task uses `feat: 增加轻量事件报告`). Keep the Conventional Commit type prefix when practical.
 6. **Verify:** Run approved checks through `verify --id <check-id>`, and run `review` for behavior-change traceability. The controller executes the frozen command and records its exit code, output digest, tested Git SHA, failure class, and recommended next strategy. If one fails, classify it before changing code; do not repeat the same strategy without new evidence. Add a verifier only through `replan`.
-7. **Record:** Mark acceptance criteria `VERIFIED` only after all their approved `verified_by` checks have fresh PASS receipts. Record risks and counter-evidence, then commit the `.goal-flow/` audit update separately.
+7. **Record:** Mark acceptance criteria `VERIFIED` only after approved checks have fresh PASS receipts. Real-required MUSTs cannot use Mock or simulated evidence. Record risk minimum evidence and residual risk, then commit the `.goal-flow/` audit update separately.
 8. **Gate:** Run `gate --apply`. Choose the next epoch from the largest unsatisfied approved acceptance criterion.
 
 Do not stop merely because a checklist is exhausted. Stop only when the Gate returns `WAIT`, `READY_FOR_REVIEW`, or the user pauses or cancels.
@@ -85,11 +85,11 @@ Read [verification.md](references/verification.md) completely before final revie
 - Use a fresh-context reviewer for substantial changes when available.
 - Treat subagent reports as candidate findings, never as proof.
 - Preserve counter-evidence and residual risks.
-- Mark a risk `MITIGATED` only with non-empty evidence and fresh controller PASS receipts via `--verified-by`; otherwise keep it `OPEN` and replan if a new verifier is needed.
+- Use `OPEN | PARTIALLY_MITIGATED | MITIGATED | ACCEPTED`. Evidence below the risk minimum is at most partial; high/critical OPEN or PARTIAL blocks delivery, while medium/low residual risk lowers assurance.
 - Never mark a risk `ACCEPTED` unless the user explicitly accepts it; record their identity with `--accepted-by`.
 - Do not claim a probability when confidence is `UNCALIBRATED`.
 
-Only present `READY_FOR_ACCEPTANCE` after `gate --apply` succeeds for a full Goal Flow or for a behavior-change/medium-risk Standard task. Evidence remains current across commits that change only `.goal-flow/`; any product-tree change invalidates it. Low-risk, non-behavior Standard delivery completes automatically after its Gate passes. For any flow in `READY_FOR_ACCEPTANCE`, the user—not the agent—decides acceptance. A `需要修改` decision records a delivery baseline and invalidates old receipts; Gate requires fresh post-rejection verification before acceptance can be shown again.
+Only present `READY_FOR_ACCEPTANCE` after `gate --apply` succeeds. Read `effective_status` and structured freshness rather than trusting stored status: stale evidence displays `VERIFYING` with exact invalidating paths. Low-risk, non-behavior Standard completes automatically. A `需要修改` decision invalidates old receipts; fresh post-rejection receipts are required before acceptance can be shown again.
 
 ## Interaction contract
 

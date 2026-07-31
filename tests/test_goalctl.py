@@ -23,6 +23,14 @@ DIMENSIONS = [
     "migration-rollback",
     "documentation-deliverables",
 ]
+CHECK_EVIDENCE_ARGS = [
+    "--role", "goal",
+    "--evidence-mode", "real",
+    "--covers-requirement-id", "REQ-001",
+    "--proves", "Exercises the committed observable user outcome end to end",
+    "--limitations", "Does not prove behavior outside the declared repository scenario",
+]
+REQUIREMENT_EVIDENCE_ARGS = ["--minimum-evidence-mode", "real"]
 
 
 class GoalCtlTests(unittest.TestCase):
@@ -55,6 +63,9 @@ class GoalCtlTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, expected, result.stderr + result.stdout)
         return json.loads(result.stdout)
+
+    def record_check(self, *args: str, expected: int = 0) -> dict:
+        return self.ctl("record", "check", *args, *CHECK_EVIDENCE_ARGS, expected=expected)
 
     def test_status_is_graceful_without_an_active_goal(self) -> None:
         self.ctl("cancel", "--reason", "test status without an active goal")
@@ -145,10 +156,10 @@ Required check TEST: test -f feature.txt
 """,
             encoding="utf-8",
         )
-        self.ctl("record", "check", "--goal-id", "light-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--goal-id", "light-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.ctl(
             "record", "requirement", "--goal-id", "light-standard", "--id", "REQ-001", "--kind", "must",
-            "--status", "UNVERIFIED", "--statement", "feature.txt exists with expected content", "--verified-by", "TEST",
+            "--status", "UNVERIFIED", "--statement", "feature.txt exists with expected content", "--verified-by", "TEST", *REQUIREMENT_EVIDENCE_ARGS,
         )
         self.ctl(
             "record", "dimension", "--goal-id", "light-standard", "--id", "functional", "--status", "COVERED",
@@ -166,7 +177,7 @@ Required check TEST: test -f feature.txt
             "--mode", "standard",
         )
         self.write_complete_goal_for("baseline-standard")
-        self.ctl("record", "check", "--goal-id", "baseline-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--goal-id", "baseline-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("baseline-standard")
         self.ctl(
             "record", "dimension", "--goal-id", "baseline-standard", "--id", "functional", "--status", "COVERED",
@@ -210,7 +221,7 @@ Required check TEST: test -f feature.txt
             "- [ ] T-001 (REQ-001, SCN-001): Implement and verify the feature\n",
             encoding="utf-8",
         )
-        self.ctl("record", "check", "--goal-id", "behavior-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--goal-id", "behavior-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("behavior-standard")
         self.ctl(
             "record", "dimension", "--goal-id", "behavior-standard", "--id", "functional", "--status", "COVERED",
@@ -231,7 +242,7 @@ Required check TEST: test -f feature.txt
             "--mode", "standard",
         )
         self.write_complete_goal_for("standard-goal")
-        self.ctl("record", "check", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("standard-goal")
         self.register_dimensions_for("standard-goal")
         approved = self.ctl("approve", "--goal-id", "standard-goal", "--auto-approved", "--next-action", "Implement standard task")
@@ -247,7 +258,7 @@ Required check TEST: test -f feature.txt
             "--mode", "standard", "--profile", "strict",
         )
         self.write_complete_goal_for("strict-standard")
-        self.ctl("record", "check", "--goal-id", "strict-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--goal-id", "strict-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("strict-standard")
         self.register_dimensions_for("strict-standard")
         approved = self.ctl("approve", "--goal-id", "strict-standard", "--user-approved", "--next-action", "Implement strict task")
@@ -263,7 +274,7 @@ Required check TEST: test -f feature.txt
             "--mode", "standard",
         )
         self.write_complete_goal_for("standard-goal")
-        self.ctl("record", "check", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("standard-goal")
         self.register_dimensions_for("standard-goal")
         self.ctl("approve", "--goal-id", "standard-goal", "--auto-approved", "--next-action", "Implement standard task")
@@ -321,7 +332,7 @@ Required check TEST: test -f feature.txt
             "- [ ] T-001 (REQ-001, SCN-001): Implement and verify the feature\n",
             encoding="utf-8",
         )
-        self.ctl("record", "check", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.record_check("--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("behavior-goal")
         self.register_dimensions_for("behavior-goal")
         review = self.ctl("review", "--goal-id", "behavior-goal")
@@ -333,8 +344,8 @@ Required check TEST: test -f feature.txt
 
     def test_standard_requires_core_dimensions_but_strict_requires_all(self) -> None:
         self.write_complete_goal()
-        self.ctl(
-            "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+        self.record_check(
+            "--id", "TEST", "--status", "PENDING", "--required",
             "--command", "test -f feature.txt",
         )
         self.register_requirement()
@@ -411,7 +422,7 @@ Required check TEST: test -f feature.txt
         self.assertEqual(after["state_revision"], before["state_revision"] + 4)
         events_path = self.repo / ".goal-flow" / "test-goal" / "events.jsonl"
         events = [json.loads(line) for line in events_path.read_text().splitlines()]
-        self.assertEqual(sum(item["event"] == "update" for item in events), 4)
+        self.assertEqual(sum(item["event"] == "update" for item in events), 0)
 
     def test_events_are_minimal_and_report_tolerates_an_incomplete_tail(self) -> None:
         secret = "SECRET-user-supplied-next-action"
@@ -483,8 +494,8 @@ Required check TEST: test -f feature.txt
         )
         try:
             self.write_complete_goal(command)
-            self.ctl(
-                "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+            self.record_check(
+                "--id", "TEST", "--status", "PENDING", "--required",
                 "--command", command, "--timeout", "1",
             )
             self.register_requirement()
@@ -619,6 +630,7 @@ Required check TEST: {check_command}
             "--failure-mode", "The file is missing or contains unexpected content",
             "--basis", "The requested repository outcome and existing test conventions",
             "--verified-by", "TEST",
+            *REQUIREMENT_EVIDENCE_ARGS,
         )
 
     def register_requirement_for(self, goal_id: str) -> None:
@@ -629,6 +641,7 @@ Required check TEST: {check_command}
             "--failure-mode", "The file is missing or contains unexpected content",
             "--basis", "The requested repository outcome and existing test conventions",
             "--verified-by", "TEST",
+            *REQUIREMENT_EVIDENCE_ARGS,
         )
 
     def register_dimensions(self) -> None:
@@ -661,8 +674,8 @@ Required check TEST: {check_command}
 
     def prepare_plan(self, check_command: str = "test -f feature.txt") -> None:
         self.write_complete_goal(check_command)
-        self.ctl(
-            "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+        self.record_check(
+            "--id", "TEST", "--status", "PENDING", "--required",
             "--command", check_command,
         )
         self.register_requirement()
@@ -686,6 +699,7 @@ Required check TEST: {check_command}
             "record", "requirement", "--id", "REQ-001", "--kind", "must",
             "--status", "VERIFIED", "--statement", "feature.txt exists with expected content",
             "--evidence", "Verified by the executed TEST receipt", "--git-sha", sha,
+            *REQUIREMENT_EVIDENCE_ARGS,
         )
 
     def test_approval_requires_must_requirement(self) -> None:
@@ -699,11 +713,17 @@ Required check TEST: {check_command}
 
     def test_approved_design_drift_stops_gate(self) -> None:
         self.register_and_approve()
+        sha = self.commit_product()
+        self.record_complete_evidence(sha)
+        self.ctl("gate", "--apply")
         goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
         goal.write_text(goal.read_text(encoding="utf-8") + "\nChanged.\n", encoding="utf-8")
         payload = self.ctl("gate")
         self.assertEqual(payload["gate"], "WAIT")
         self.assertIn("changed", payload["reasons"][0])
+        applied = self.ctl("gate", "--apply")
+        self.assertEqual(applied["stored_status"], "BLOCKED")
+        self.assertIn("replan", applied["next_action"])
 
     def test_gate_allows_audit_commits_but_invalidates_product_changes(self) -> None:
         self.register_and_approve()
@@ -726,6 +746,76 @@ Required check TEST: {check_command}
         self.assertEqual(stale["gate"], "CONTINUE")
         self.assertEqual(stale["status"], "VERIFYING")
         self.assertEqual(stale["must_requirement_coverage"], 0)
+
+    def test_ds_store_reports_exact_invalidating_path_and_effective_status(self) -> None:
+        self.register_and_approve()
+        sha = self.commit_product()
+        self.record_complete_evidence(sha)
+        self.ctl("gate", "--apply")
+        (self.repo / ".DS_Store").write_bytes(b"finder metadata")
+        status = self.ctl("status")
+        self.assertEqual(status["stored_status"], "READY_FOR_ACCEPTANCE")
+        self.assertEqual(status["effective_status"], "VERIFYING")
+        self.assertFalse(status["freshness"]["fresh"])
+        self.assertEqual(status["invalidated_paths"], [".DS_Store"])
+        summary = self.ctl("summary", "--json")
+        report = self.ctl("report", "--json")
+        self.assertIn(".DS_Store", summary["invalidated_paths"])
+        self.assertIn(".DS_Store", report["invalidated_paths"])
+
+    def test_real_requirement_rejects_weaker_planned_evidence(self) -> None:
+        self.write_complete_goal()
+        self.ctl(
+            "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+            "--command", "test -f feature.txt", "--role", "goal",
+            "--evidence-mode", "simulated", "--covers-requirement-id", "REQ-001",
+            "--proves", "Exercises the planned user outcome through a simulation",
+            "--limitations", "Does not execute the real user path or external boundary",
+        )
+        self.register_requirement()
+        self.register_dimensions()
+        denied = self.ctl("plan-check", expected=1)
+        self.assertTrue(any("requires real evidence" in reason for reason in denied["reasons"]))
+
+    def test_non_real_evidence_downgrade_can_deliver_with_medium_assurance(self) -> None:
+        self.prepare_plan()
+        state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["requirements"]["REQ-001"]["minimum_evidence_mode"] = "simulated"
+        state["checks"]["TEST"]["evidence_mode"] = "mock"
+        state["checks"]["TEST"]["role"] = "component"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        goal_path = self.repo / ".goal-flow" / "test-goal" / "goal.md"
+        goal_path.write_text(
+            goal_path.read_text(encoding="utf-8") + "\nRequired check GOAL: test -f feature.txt\n",
+            encoding="utf-8",
+        )
+        self.record_check("--id", "GOAL", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.ctl("approve", "--user-approved", "--next-action", "Implement feature")
+        self.ctl("bind-worktree")
+        sha = self.commit_product()
+        self.ctl("verify", "--id", "TEST")
+        self.ctl("verify", "--id", "GOAL")
+        self.ctl(
+            "record", "requirement", "--id", "REQ-001", "--kind", "must",
+            "--status", "VERIFIED", "--statement", "feature.txt exists with expected content",
+            "--evidence", "Mock receipt is an explicit evidence downgrade", "--git-sha", sha,
+            "--minimum-evidence-mode", "simulated",
+        )
+        gate = self.ctl("gate")
+        self.assertEqual(gate["gate"], "READY_FOR_REVIEW")
+        self.assertEqual(gate["assurance"], "MEDIUM")
+        report = self.ctl("report", "--json")
+        self.assertEqual(report["partially_proved"], ["REQ-001"])
+
+    def test_full_flow_requires_goal_level_check(self) -> None:
+        self.prepare_plan()
+        state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["checks"]["TEST"]["role"] = "component"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        denied = self.ctl("plan-check", expected=1)
+        self.assertTrue(any("goal check" in reason for reason in denied["reasons"]))
 
     def test_approval_requires_a_required_check(self) -> None:
         self.write_complete_goal()
@@ -764,8 +854,8 @@ Required check TEST: {check_command}
         self.assertIn("失败断言", executed["recommended_action"])
 
     def test_check_command_cannot_run_before_approval(self) -> None:
-        self.ctl(
-            "record", "check", "--id", "TEST", "--status", "PENDING", "--required",
+        self.record_check(
+            "--id", "TEST", "--status", "PENDING", "--required",
             "--command", "python3 -c 'print(1)'",
         )
         denied = self.ctl("verify", "--id", "TEST", expected=2)
@@ -775,7 +865,7 @@ Required check TEST: {check_command}
         self.register_and_approve()
         denied = self.ctl(
             "record", "requirement", "--id", "REQ-001", "--kind", "should",
-            "--status", "UNVERIFIED", "--statement", "Weaker feature", expected=2,
+            "--status", "UNVERIFIED", "--statement", "Weaker feature", *REQUIREMENT_EVIDENCE_ARGS, expected=2,
         )
         self.assertIn("frozen", denied["error"])
         state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
@@ -840,13 +930,13 @@ Required check TEST: {check_command}
     def test_accepted_risk_requires_identity(self) -> None:
         denied = self.ctl(
             "record", "risk", "--id", "RISK-001", "--status", "ACCEPTED",
-            "--severity", "medium", "--statement", "Known limitation", expected=2,
+            "--severity", "medium", "--statement", "Known limitation", "--minimum-evidence-mode", "real", expected=2,
         )
         self.assertIn("--accepted-by", denied["error"])
         accepted = self.ctl(
             "record", "risk", "--id", "RISK-001", "--status", "ACCEPTED",
             "--severity", "medium", "--statement", "Known limitation",
-            "--accepted-by", "test-user",
+            "--accepted-by", "test-user", "--minimum-evidence-mode", "real",
         )
         self.assertEqual(accepted["state"]["risks"]["RISK-001"]["accepted_by"], "test-user")
 
@@ -856,20 +946,46 @@ Required check TEST: {check_command}
         self.record_complete_evidence(sha)
         self.ctl(
             "record", "risk", "--id", "RISK-CRITICAL", "--status", "OPEN",
-            "--severity", "critical", "--statement", "Critical failure mode",
+            "--severity", "critical", "--statement", "Critical failure mode", "--minimum-evidence-mode", "real",
         )
         self.assertEqual(self.ctl("gate")["gate"], "CONTINUE")
         denied = self.ctl(
             "record", "risk", "--id", "RISK-CRITICAL", "--status", "MITIGATED",
-            "--evidence", "Agent says fixed", expected=2,
+            "--evidence", "Agent says fixed", "--minimum-evidence-mode", "real", expected=2,
         )
         self.assertIn("fresh PASS", denied["error"])
         mitigated = self.ctl(
             "record", "risk", "--id", "RISK-CRITICAL", "--status", "MITIGATED",
-            "--evidence", "Covered by executed TEST", "--verified-by", "TEST",
+            "--evidence", "Covered by executed TEST", "--verified-by", "TEST", "--minimum-evidence-mode", "real",
         )
         self.assertEqual(mitigated["state"]["risks"]["RISK-CRITICAL"]["severity"], "critical")
         self.assertEqual(self.ctl("gate")["gate"], "READY_FOR_REVIEW")
+
+    def test_partial_risk_blocks_when_serious_but_only_lowers_assurance_when_medium(self) -> None:
+        self.register_and_approve()
+        sha = self.commit_product()
+        self.record_complete_evidence(sha)
+        partial = self.ctl(
+            "record", "risk", "--id", "RISK-HIGH", "--status", "PARTIALLY_MITIGATED",
+            "--severity", "high", "--statement", "Main path still has a serious residual failure mode",
+            "--evidence", "TEST reduces but does not eliminate the risk", "--verified-by", "TEST",
+            "--minimum-evidence-mode", "real", "--residual-risk", "Failure remains possible outside the checked boundary",
+        )
+        self.assertEqual(partial["state"]["risks"]["RISK-HIGH"]["status"], "PARTIALLY_MITIGATED")
+        self.assertEqual(self.ctl("gate")["gate"], "CONTINUE")
+        self.ctl(
+            "record", "risk", "--id", "RISK-HIGH", "--status", "ACCEPTED",
+            "--accepted-by", "test-user", "--minimum-evidence-mode", "real",
+        )
+        self.ctl(
+            "record", "risk", "--id", "RISK-MEDIUM", "--status", "PARTIALLY_MITIGATED",
+            "--severity", "medium", "--statement", "A bounded residual limitation remains",
+            "--evidence", "TEST covers the primary path", "--verified-by", "TEST",
+            "--minimum-evidence-mode", "real", "--residual-risk", "Rare unsupported inputs remain",
+        )
+        gate = self.ctl("gate")
+        self.assertEqual(gate["gate"], "READY_FOR_REVIEW")
+        self.assertEqual(gate["assurance"], "MEDIUM")
 
     def test_replan_invalidates_approval_and_evidence(self) -> None:
         self.register_and_approve()
@@ -925,7 +1041,7 @@ Required check TEST: {check_command}
         denied = self.ctl(
             "record", "requirement", "--id", "REQ-001", "--kind", "must",
             "--status", "VERIFIED", "--statement", "feature.txt exists with expected content",
-            "--evidence", "Verified by TEST", "--git-sha", wrong, expected=2,
+            "--evidence", "Verified by TEST", "--git-sha", wrong, *REQUIREMENT_EVIDENCE_ARGS, expected=2,
         )
         self.assertIn("must match linked check receipts", denied["error"])
 
@@ -939,6 +1055,48 @@ Required check TEST: {check_command}
         self.assertEqual(third["gate"], "WAIT")
         self.assertEqual(third["status"], "BLOCKED")
         self.assertIn("No observable state progress", third["reasons"][0])
+        events = [
+            json.loads(line)
+            for line in (self.repo / ".goal-flow" / "test-goal" / "events.jsonl").read_text().splitlines()
+        ]
+        self.assertEqual(sum(item["event"] == "gate" for item in events), 1)
+
+    def test_read_only_views_do_not_need_repository_write_permission(self) -> None:
+        self.prepare_plan()
+        store = self.repo / ".goal-flow"
+        goal = store / "test-goal"
+        paths = [store / "controller.lock", goal / "state.json", goal / "goal.md", goal / "events.jsonl", goal, store]
+        original_modes = {path: path.stat().st_mode for path in paths if path.exists()}
+        try:
+            for path in paths:
+                if path.exists():
+                    os.chmod(path, 0o444 if path.is_file() else 0o555)
+            self.assertTrue(self.ctl("status")["active"])
+            self.assertTrue(self.ctl("summary", "--json")["active"])
+            self.assertEqual(self.ctl("report", "--json")["goal_id"], "test-goal")
+        finally:
+            for path, mode in reversed(list(original_modes.items())):
+                os.chmod(path, mode)
+
+    def test_old_schema_is_rejected_without_mutation(self) -> None:
+        state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["schema_version"] = 2
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        before = state_path.read_bytes()
+        denied = self.ctl("status", expected=2)
+        self.assertIn("Incompatible Goal Flow schema v2", denied["error"])
+        self.assertIn("Archive", denied["error"])
+        self.assertEqual(state_path.read_bytes(), before)
+
+    def test_recording_definitions_does_not_duplicate_evidence_or_events(self) -> None:
+        self.prepare_plan()
+        directory = self.repo / ".goal-flow" / "test-goal"
+        evidence = (directory / "evidence.md").read_text(encoding="utf-8")
+        self.assertNotIn("Requirement REQ-001", evidence)
+        self.assertNotIn("Check TEST", evidence)
+        events = [json.loads(line) for line in (directory / "events.jsonl").read_text().splitlines()]
+        self.assertFalse(any(item["event"].startswith("record") for item in events))
 
 
 if __name__ == "__main__":

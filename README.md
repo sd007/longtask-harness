@@ -19,6 +19,8 @@ Goal Flow 会按任务复杂度选择最小可用流程：
 - `goal-flow`：跨会话、容易偏移或需要完整证据的长任务；
 - `strict`：安全、迁移、生产可靠性或不可逆操作等高风险任务。
 
+完整流程只保留三个核心 Gate：方案必须可信、执行不能漂移、交付必须有当前证据。每个检查声明 `mock`、`simulated` 或 `real` 证据等级、覆盖的需求、能证明与不能证明的范围；完整流程、strict 和行为变化任务还必须有一个覆盖用户主路径的目标级检查。
+
 ## 安装
 
 前置条件：
@@ -94,9 +96,9 @@ Goal Flow 会先展示决策检查。没有高影响未决项时，轻量任务�
 完整目标保存在目标仓库的 `.goal-flow/` 目录中，主要包括：
 
 - `goal.md`：目标、范围和验收标准；
-- `state.json`：当前状态和检查结果；
-- `evidence.md`：验证证据与残余风险；
-- `events.jsonl`：精简的状态事件记录。
+- `state.json`：唯一当前事实源，保存状态、需求、检查和风险；
+- `evidence.md`：只追加审批、验证回执、拒收和最终验收；
+- `events.jsonl`：只记录关键状态转换和验证事件。
 
 通常无需手动调用控制器。排查时可在插件源码目录运行：
 
@@ -111,5 +113,6 @@ python3 goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project re
 - 插件未出现：重启 Codex、新建任务，并检查 `codex plugin list --json`；
 - Hook 未运行：在 Codex CLI 的 `/hooks` 中确认两个 Hook 已信任且未禁用；
 - 安装失败：先运行 `./install.sh --dry-run` 查看将执行的操作。
+- 旧目标报 schema 不兼容：先归档旧 `.goal-flow`，再重新初始化；v0.10 不会自动修改或删除 v1/v2 状态。
 
-更多内容见[安装说明](docs/installation.md)、[使用说明](docs/usage.md)和[设计说明](docs/design.md)。当前版本为 `0.9.0`。
+更多内容见[安装说明](docs/installation.md)、[使用说明](docs/usage.md)和[设计说明](docs/design.md)。当前版本为 `0.10.0`（schema v3）。

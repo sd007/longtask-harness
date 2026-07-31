@@ -19,7 +19,7 @@ Use these statuses:
 - `UNVERIFIED`: no sufficient current evidence exists.
 - `CONTRADICTED`: current evidence shows the requirement is not met.
 
-Check evidence must be a controller-generated execution receipt, not an Agent-authored PASS statement. A VERIFIED requirement must reference its approved passing checks. Evidence is bound to the tested implementation SHA. Later commits may update only `.goal-flow/` audit files; any other change makes the evidence stale and requires checks to be rerun. Lightweight Standard additionally protects its initialization product fingerprint, so pre-existing dirty files may remain but newly introduced drift does not pass verification.
+Check evidence must be a controller-generated execution receipt, not an Agent-authored PASS statement. Each check states `mock`, `simulated`, or `real`, the requirements it covers, what it proves, and its limitations. Freshness is a structured result with a reason, exact invalidating paths, and evidence SHA. Later commits may update only `.goal-flow/`; any other change makes evidence stale and effective status becomes `VERIFYING`.
 
 ## Verification ladder
 
@@ -48,11 +48,11 @@ Report:
 
 A high score never overrides a missing `MUST` requirement.
 
-A mitigated risk is resolved only while its bound controller checks remain fresh. High or critical risks without such receipts block delivery. A user-accepted serious residual risk does not block the Gate, but prevents `HIGH` assurance.
+Risk states are `OPEN`, `PARTIALLY_MITIGATED`, `MITIGATED`, and user-approved `ACCEPTED`. Evidence below the declared minimum is at most partial. High or critical OPEN/PARTIAL risks block delivery; medium/low residual risks permit review but cap assurance below HIGH.
 
 ## Delivery package
 
-Provide:
+Provide the conclusion under four headings: proved, partially proved, not proved, and residual risks. Also provide:
 
 - final Git SHA and implementation summary
 - requirement-by-requirement evidence

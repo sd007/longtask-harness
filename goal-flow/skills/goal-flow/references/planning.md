@@ -44,7 +44,7 @@ Never place secret values in `goal.md` or verifier commands. Refer to environmen
 
 Use the lightweight `standard` Harness for normal day-to-day repository work and `strict` when security, migration, production reliability, irreversible actions, or similarly costly failure modes are material. Full `goal-flow` keeps explicit approval and the complete evidence contract; lightweight standard work may use implicit approval when no high-impact question remains.
 
-For lightweight `standard`, assess `functional`, define one observable MUST criterion, and register one required controller check. Its MUST needs an outcome and a verifier, but not a full evidence-scope, failure-mode, or basis narrative unless the task makes those material. Full `goal-flow` standard additionally assesses the other three core dimensions. For `strict`, continue through the full list. Record each required dimension as `COVERED` with linked criterion IDs, or `N_A` with a substantive rationale:
+For lightweight `standard`, assess `functional`, define one observable MUST criterion, and register one valid required controller check. Every requirement declares `minimum_evidence_mode`; every check declares `role`, `evidence_mode`, covered requirements, what it proves, and its limitations. Full `goal-flow`, strict, and behavior-change tasks require a goal-level check over the real user main path. Full `goal-flow` standard additionally assesses the other three core dimensions. For `strict`, continue through the full list:
 
 - `functional`
 - `negative-boundary`
@@ -79,6 +79,8 @@ Prefer black-box outcomes over implementation details. Include tolerances or thr
 ## Run the planning gate
 
 Register the criteria, checks, and dimensions, then run `plan-check`. Resolve every reported gap yourself when evidence permits. Present the plan to the user only after it returns `READY_FOR_APPROVAL`.
+
+Evidence strength is `mock < simulated < real`. A real-required MUST cannot be approved with only Mock or simulated checks. An explicitly disclosed weaker mode for an ordinary MUST may proceed only with reduced assurance; never label a check `real` unless it actually traverses the target runtime path.
 
 User approval freezes the exact `goal.md`, structured Decision Check, criteria definitions, evidence scope, failure modes, basis, dimension assessment, verifier mapping, and check commands. When the bundled `goal_flow_approval` MCP tool is available, its `elicitation/create` request passes the current `state_revision` so the host can render `批准并执行` and `修改方案` without allowing stale buttons to mutate state; a declined or cancelled request must not run a controller transition. Any material change requires `replan` and new approval. In hosts without MCP elicitation, retain the natural-language fallback without requiring a fixed phrase.
 
