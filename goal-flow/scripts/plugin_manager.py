@@ -106,6 +106,61 @@ def add_cachebuster(plugin_path: Path) -> None:
     atomic_write_json(manifest_path, manifest)
 
 
+def validate_mcp_server(plugin_path: Path) -> None:
+    """Launch the bundled MCP server exactly as Codex will and verify initialization."""
+    config_path = plugin_path / ".mcp.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        servers = config.get("mcpServers", config.get("mcp_servers"))
+        server = servers["goal-flow-approval"]
+        command = server["command"]
+        args = server.get("args", [])
+        raw_cwd = server.get("cwd", ".")
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise InstallError(f"Invalid Goal Flow MCP configuration: {exc}") from exc
+    if not isinstance(command, str) or not command:
+        raise InstallError("Goal Flow MCP command must be a non-empty string")
+    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        raise InstallError("Goal Flow MCP args must be an array of strings")
+    if raw_cwd != ".":
+        raise InstallError("Goal Flow MCP cwd must be the plugin root (`.`)")
+    if any("${PLUGIN_ROOT}" in value for value in [command, *args]):
+        raise InstallError("Goal Flow MCP configuration contains an unsupported PLUGIN_ROOT placeholder")
+
+    request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "goal-flow-installer", "version": "1"},
+        },
+    }
+    try:
+        result = subprocess.run(
+            [command, *args],
+            cwd=plugin_path,
+            input=json.dumps(request) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise InstallError(f"Goal Flow MCP startup check failed: {exc}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "server exited before initialization").strip()
+        raise InstallError(f"Goal Flow MCP startup check failed: {detail}")
+    try:
+        response = json.loads(result.stdout.splitlines()[0])
+        server_name = response["result"]["serverInfo"]["name"]
+    except (IndexError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise InstallError("Goal Flow MCP returned an invalid initialize response") from exc
+    if response.get("id") != 1 or server_name != "goal-flow-approval":
+        raise InstallError("Goal Flow MCP initialize response did not identify the expected server")
+
+
 def run_codex(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["codex", *args], text=True, capture_output=True, check=False
@@ -184,6 +239,7 @@ def install(args: argparse.Namespace) -> int:
                 backup = destination.with_name(f"{PLUGIN_NAME}.backup-{stamp}")
                 destination.replace(backup)
             staging.replace(destination)
+        validate_mcp_server(destination)
         atomic_write_json(marketplace_path, marketplace)
         if not args.no_codex:
             result = run_codex("plugin", "add", f"{PLUGIN_NAME}@{marketplace_name}", "--json")

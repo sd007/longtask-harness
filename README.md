@@ -41,7 +41,7 @@ cd longtask-harness
 2. 在 Codex CLI 输入 `/hooks`；
 3. 审查并信任 Goal Flow 的 `SessionStart` 和 `Stop` Hook。
 
-Hook 必须由用户手动信任，安装脚本不会绕过此安全步骤。更新插件时拉取最新代码后重新运行 `./install.sh` 即可。
+Hook 必须由用户手动信任，安装脚本不会绕过此安全步骤。MCP 配置、启动自检、插件注册和失败回滚均由脚本完成；用户不需要编辑任何配置。更新插件时拉取最新代码后重新运行 `./install.sh` 即可。
 
 常用安装选项：
 

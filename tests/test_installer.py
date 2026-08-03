@@ -62,7 +62,14 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertTrue(installed_manifest["version"].startswith("0.10.0+codex.local-"))
         self.assertEqual(installed_manifest["mcpServers"], "./.mcp.json")
+        mcp = json.loads((self.home / "plugins" / "goal-flow" / ".mcp.json").read_text())
+        approval = mcp["mcpServers"]["goal-flow-approval"]
+        self.assertEqual(approval["args"], ["-u", "./mcp/approval_server.py"])
+        self.assertEqual(approval["cwd"], ".")
         self.assertEqual([item["name"] for item in self.marketplace()["plugins"]], ["keep-me", "goal-flow"])
+
+    def test_bundled_mcp_configuration_completes_real_initialize_handshake(self) -> None:
+        plugin_manager.validate_mcp_server(ROOT / "goal-flow")
 
     def test_dry_run_changes_nothing(self) -> None:
         before = self.marketplace()
@@ -164,6 +171,33 @@ class InstallerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 2)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep this version\n")
+        self.assertEqual(self.marketplace(), marketplace_before)
+        self.assertFalse(list((self.home / "plugins").glob("goal-flow.backup-*")))
+
+    def test_failed_mcp_check_restores_previous_plugin_and_marketplace(self) -> None:
+        self.assertEqual(self.run_script(INSTALL, "--yes").returncode, 0)
+        destination = self.home / "plugins" / "goal-flow"
+        marker = destination / "previous-install.txt"
+        marker.write_text("keep this version\n", encoding="utf-8")
+        marketplace_before = self.marketplace()
+        args = Namespace(
+            home=str(self.home),
+            no_codex=True,
+            yes=True,
+            dry_run=False,
+            setup_hooks=False,
+            no_hooks=True,
+        )
+
+        with patch.object(
+            plugin_manager,
+            "validate_mcp_server",
+            side_effect=plugin_manager.InstallError("broken MCP"),
+        ):
+            with self.assertRaises(plugin_manager.InstallError):
+                plugin_manager.install(args)
+
         self.assertEqual(marker.read_text(encoding="utf-8"), "keep this version\n")
         self.assertEqual(self.marketplace(), marketplace_before)
         self.assertFalse(list((self.home / "plugins").glob("goal-flow.backup-*")))

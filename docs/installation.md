@@ -17,8 +17,11 @@ Goal Flow 提供真正的一键管理脚本。普通用户不需要了解 Python
 1. 将插件复制到 `~/plugins/goal-flow`；
 2. 安全合并 `~/.agents/plugins/marketplace.json`，不会覆盖其他插件；
 3. 为本次安装生成版本 cachebuster；
-4. 执行 `codex plugin add goal-flow@<个人 marketplace 名称> --json`；
-5. 失败时恢复原插件和 marketplace。
+4. 按 Codex 实际使用的相对路径启动审批 MCP，并完成一次 `initialize` 握手自检；
+5. 执行 `codex plugin add goal-flow@<个人 marketplace 名称> --json`；
+6. 任一步失败时恢复原插件和 marketplace。
+
+MCP 的路径、工作目录、注册和启动检查均由脚本处理，用户不需要编辑 `.mcp.json`、`config.toml` 或设置环境变量。
 
 安装后只需重启 Codex、新建任务，然后在 `/hooks` 中审查并信任 `SessionStart` 和 `Stop`。Hook 信任不能自动跳过，这是安全边界。
 
@@ -46,7 +49,7 @@ Goal Flow 提供真正的一键管理脚本。普通用户不需要了解 Python
 ./install.sh
 ```
 
-脚本会替换旧插件、更新 cachebuster 并重新安装。Hook 内容变化时需要重新信任；请用新任务加载新版 Skill。
+脚本会替换旧插件、更新 cachebuster、验证 MCP 并重新安装。Hook 内容变化时需要重新信任；请用新任务加载新版 Skill。
 
 ## 一键卸载
 
@@ -75,6 +78,7 @@ Goal Flow 提供真正的一键管理脚本。普通用户不需要了解 Python
 - `codex CLI was not found`：先安装并登录 Codex，再重试。
 - 插件没有出现：重启 Codex、使用新任务，并运行 `codex plugin list --json`。
 - Hook 没有运行：打开 `/hooks`，确认两个 Hook 已信任且未禁用。
+- MCP 自检失败：安装器会显示子进程错误并自动恢复上一版本，不需要手工修复 Codex 配置。
 - marketplace JSON 无效：脚本会停止且不会覆盖文件；先修复报告的 JSON 错误。
 
 官方参考：[插件打包](https://developers.openai.com/plugins/build/plugins)、[Codex CLI 插件命令](https://developers.openai.com/codex/cli/reference)、[Hooks](https://learn.chatgpt.com/docs/hooks)。
