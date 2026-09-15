@@ -60,7 +60,7 @@ class InstallerTests(unittest.TestCase):
         installed_manifest = json.loads(
             (self.home / "plugins" / "goal-flow" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertTrue(installed_manifest["version"].startswith("0.11.0+codex.local-"))
+        self.assertTrue(installed_manifest["version"].startswith("0.12.0+codex.local-"))
         self.assertEqual(installed_manifest["mcpServers"], "./.mcp.json")
         mcp = json.loads((self.home / "plugins" / "goal-flow" / ".mcp.json").read_text())
         approval = mcp["mcpServers"]["goal-flow-approval"]

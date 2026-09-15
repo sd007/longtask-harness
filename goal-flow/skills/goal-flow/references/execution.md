@@ -41,6 +41,18 @@ An implementation defect stays in this phase. Evidence that an approved assumpti
 
 Do not make progress by deleting requirements, weakening tests, adding skips, replacing real integration with mocks, or hiding counter-evidence.
 
+## Implementation fidelity review
+
+Before the implementation milestone is complete, inspect the final diff against the approved solution and answer five questions:
+
+1. Does the real user trigger traverse the intended main path to the observable result?
+2. Do module responsibilities and dependency direction still match the approved boundaries?
+3. Do interfaces preserve the agreed inputs, outputs, errors, compatibility, and failure behavior?
+4. Did temporary mocks, hard-coded values, bypasses, global state, or unexplained TODOs enter the product path?
+5. Can the approved likely next change be absorbed by the named extension point without rewriting the core flow?
+
+Record actionable defects as implementation work and fix them in this phase. Keep the review concise; it is a solution-to-code comparison, not a separate architecture specification.
+
 ## Failure handling
 
 Classify failures before changing code:

@@ -1,4 +1,4 @@
 interface:
   display_name: "Goal Flow"
-  short_description: "Align visually, implement, and verify lightly"
-  default_prompt: "Use $goal-flow to understand and visually align this task when useful, then implement and verify it through the smallest safe three-phase flow."
+  short_description: "Align the solution, implement faithfully, verify key scenarios"
+  default_prompt: "Use $goal-flow to align a compact solution and evolvability probe, implement it faithfully, then verify the few product scenarios most likely to expose a real defect."

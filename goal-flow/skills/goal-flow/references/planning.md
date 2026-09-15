@@ -6,7 +6,7 @@ This is Phase 1 of the single Goal Flow. Its output is a decision-ready contract
 
 ## Shape the requirement before designing
 
-Establish who experiences the outcome, the trigger, the observable result, the important data, the system boundary, non-goals, and the cost of failure. For an existing project, compare current state → proposed change → target state. For greenfield, define the smallest coherent v1 boundary and explicitly defer later capabilities.
+Establish who experiences the outcome, the trigger, the observable result, the important data, the system boundary, non-goals, and the cost of failure. For an existing project, compare current state → proposed change → target state. For greenfield, define the smallest coherent v1 boundary and explicitly defer later capabilities. Keep the agreement readable as one compact solution card rather than multiplying management artifacts.
 
 Use grillme-style questioning only after inspection and only for ambiguity that can materially change scope, architecture, public behavior, quality, risk, or authorization. Ask a small related wave, state the recommended default and consequence, incorporate the answer, and repeat only when a new high-impact ambiguity appears.
 
@@ -44,9 +44,10 @@ Include in `goal.md`:
 2. Repository, business, and domain context with sources or retrieval dates.
 3. Assumptions, decisions, alternatives, and why the recommendation wins.
 4. Interfaces, data changes, compatibility, security, performance, observability, migration, and rollback where applicable.
-5. Stable acceptance criteria and their exact verifier commands.
-6. Milestones and Git checkpoint boundaries.
-7. Remaining questions that genuinely require a user decision.
+5. Stable acceptance criteria, selected product scenarios, and their exact verifier commands.
+6. For features, refactors, migrations, and behavior changes, an evolvability probe naming the most likely next change and the intended local extension point.
+7. Milestones and Git checkpoint boundaries.
+8. Remaining questions that genuinely require a user decision.
 
 Never place secret values in `goal.md` or verifier commands. Refer to environment-variable names or credential mechanisms and request authorization only when execution actually needs them.
 
@@ -54,17 +55,18 @@ Never place secret values in `goal.md` or verifier commands. Refer to environmen
 
 Use the lightweight `standard` Harness for normal day-to-day repository work and `strict` when security, migration, production reliability, irreversible actions, or similarly costly failure modes are material. Full `goal-flow` keeps explicit approval and the complete evidence contract; lightweight standard work may use implicit approval when no high-impact question remains.
 
-For lightweight `standard`, assess `functional`, define one observable MUST criterion, and register one valid required controller check. Every requirement declares `minimum_evidence_mode`; every check declares `role`, `evidence_mode`, covered requirements, what it proves, and its limitations. Full `goal-flow`, strict, and behavior-change tasks require a goal-level check over the real user main path. Full `goal-flow` standard additionally assesses the other three core dimensions. For `strict`, continue through the full list:
+For lightweight `standard`, assess `functional`, `performance-reliability`, and `evolvability-maintainability`, define one observable MUST criterion, and register one valid required controller check. A dimension may be `N_A` when its rationale shows why it is immaterial. Every requirement declares `minimum_evidence_mode`; every check declares `role`, `evidence_mode`, covered requirements, what it proves, and its limitations. Full `goal-flow`, strict, and behavior-change tasks require a goal-level check over the real user main path. Full `goal-flow` standard additionally assesses the key boundary and regression/compatibility. For `strict`, continue through the full list:
 
 - `functional`
 - `negative-boundary`
 - `regression-compatibility`
+- `performance-reliability`
+- `evolvability-maintainability`
 - `documentation-deliverables`
 
 Strict additionally requires:
 
 - `security-privacy`
-- `performance-reliability`
 - `operations-observability`
 - `migration-rollback`
 
@@ -85,6 +87,8 @@ Good: `REQ-API-01: Retrying the same idempotency key creates at most one order.`
 Bad: `Implement retry handling.`
 
 Prefer black-box outcomes over implementation details. Include tolerances or thresholds in the observable outcome when they matter. A test name alone is not an acceptance criterion.
+
+For an observable behavior change, choose 3–5 scenarios when they add value from this classic set: the real main path, the most important business boundary, the primary dependency failure or recovery path, the most likely regression, and one performance smoke or budget. Do not mechanically include every category. The minimum is two focused Given/When/Then scenarios: the main path and one critical boundary or failure. Scenarios may live in `goal.md`; `delta.md` and `tasks.md` are optional aids for larger changes.
 
 ## Run the planning gate
 

@@ -38,6 +38,18 @@ Use the strongest applicable combination:
 
 Do not extrapolate beyond the actual scope of a verifier.
 
+## Classic product scenario set
+
+Acceptance should be small but product-shaped. Select the 3–5 scenarios most likely to expose an expensive or hidden defect:
+
+- the real user main path;
+- the most important business boundary;
+- the primary dependency failure, retry, or recovery path;
+- the existing behavior most likely to regress;
+- one performance smoke or explicit budget for latency, throughput, memory, or concurrency.
+
+Do not require every category when it is immaterial. A performance `N_A` needs a concrete reason; a material performance concern needs a threshold and current-SHA evidence. Also recheck the implementation fidelity findings so passing tests do not hide a one-off architecture, hard-coded shortcut, or broken extension point.
+
 ## Assurance
 
 Report:

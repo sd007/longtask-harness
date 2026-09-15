@@ -1,7 +1,7 @@
 {
   "name": "goal-flow",
-  "version": "0.11.0+codex.20260915042538",
-  "description": "Align software requirements visually, then implement and accept them with evidence-backed gates.",
+  "version": "0.12.0+codex.20260915065412",
+  "description": "Align a compact solution, implement it faithfully, and verify the few product scenarios that matter.",
   "author": {
     "name": "Local developer"
   },
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Goal Flow",
-    "shortDescription": "Visual alignment before reliable coding",
-    "longDescription": "A lightweight Codex-native workflow with distinct analysis/design, implementation, and acceptance contexts; optional editable Draw.io architecture and data-flow contracts; and evidence-backed gates for meaningful changes.",
+    "shortDescription": "Solution alignment and focused quality gates",
+    "longDescription": "A lightweight Codex-native workflow that aligns the solution, checks implementation fidelity, and verifies a few classic product scenarios plus evolvability before acceptance.",
     "developerName": "Local developer",
     "category": "Productivity",
     "brandColor": "#4F46E5",
@@ -24,6 +24,6 @@
       "Recover",
       "Interactive approval"
     ],
-    "defaultPrompt": "Use $goal-flow to understand and visually align this task when useful, then implement and verify it through the smallest safe three-phase flow."
+    "defaultPrompt": "Use $goal-flow to align a compact solution and evolvability probe, implement it faithfully, then verify the few product scenarios most likely to expose a real defect."
   }
 }

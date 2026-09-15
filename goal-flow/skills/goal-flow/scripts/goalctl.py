@@ -40,6 +40,7 @@ ACCEPTANCE_DIMENSIONS = {
     "functional",
     "negative-boundary",
     "regression-compatibility",
+    "evolvability-maintainability",
     "security-privacy",
     "performance-reliability",
     "operations-observability",
@@ -61,14 +62,22 @@ STANDARD_DIMENSIONS = {
     "functional",
     "negative-boundary",
     "regression-compatibility",
-    "documentation-deliverables",
+    "performance-reliability",
+    "evolvability-maintainability",
 }
-LIGHTWEIGHT_STANDARD_DIMENSIONS = {"functional"}
+LIGHTWEIGHT_STANDARD_DIMENSIONS = {
+    "functional",
+    "performance-reliability",
+    "evolvability-maintainability",
+}
 PLACEHOLDER_MARKERS = {
     "to be defined during planning",
     "define during planning",
     "pending user discussion and approval",
     "repository and domain context to be investigated",
+    "identify the most likely next change",
+    "describe the main user path",
+    "describe the most important boundary or failure",
 }
 VISUAL_PLACEHOLDER_MARKERS = {
     "todo",
@@ -1595,16 +1604,12 @@ def semantic_review(directory: Path, state: dict[str, Any], strict: bool = False
     for error in scenario_errors:
         finding("CRITICAL", "completeness", error)
 
-    if not delta_path.exists():
-        finding("CRITICAL", "completeness", "Behavior change requires delta.md")
-    else:
+    if delta_path.exists():
         _, delta_errors = parse_delta(delta_text)
         for error in delta_errors:
             finding("CRITICAL", "coherence", error)
-    if not tasks_path.exists():
-        finding("CRITICAL", "completeness", "Behavior change requires tasks.md")
-        tasks = {}
-    else:
+    tasks = {}
+    if tasks_path.exists():
         tasks, task_errors = parse_tasks(tasks_text)
         for error in task_errors:
             finding("CRITICAL", "completeness", error)
@@ -1616,6 +1621,12 @@ def semantic_review(directory: Path, state: dict[str, Any], strict: bool = False
         matching = [item for item in scenarios.values() if item.get("requirement_id") == req_id]
         if not matching:
             finding("CRITICAL", "completeness", f"MUST requirement {req_id} has no linked scenario")
+    if behavior_change and must_ids and len(scenarios) < 2:
+        finding(
+            "CRITICAL",
+            "completeness",
+            "Behavior change needs at least two focused scenarios: the main path and one critical boundary or failure",
+        )
     for scenario_id, scenario in scenarios.items():
         req_id = scenario.get("requirement_id")
         if req_id and req_id not in requirements:
@@ -1673,6 +1684,19 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
                 reasons.append(f"goal.md still contains placeholder: {marker}")
         if "## acceptance criteria" not in lowered:
             reasons.append("goal.md needs an Acceptance criteria section")
+        needs_evolvability_probe = (
+            state.get("harness", {}).get("behavior_change")
+            or state.get("harness", {}).get("task_type") in {"feature", "refactor", "migration"}
+            or visual_design_enabled(state)
+        )
+        if needs_evolvability_probe:
+            probe = re.search(
+                r"^##\s+(?:Evolvability probe|演进探针)\s*$([\s\S]*?)(?=^##\s+|\Z)",
+                goal_text,
+                flags=re.IGNORECASE | re.MULTILINE,
+            )
+            if not probe or not substantive(probe.group(1)):
+                reasons.append("goal.md needs a substantive Evolvability probe for the most likely next change")
 
     decision_check = decision_check_from_goal(goal_text, state)
     if decision_check.get("user_decisions") or decision_check.get("status") == "pending":
@@ -2142,8 +2166,9 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     baseline_product_fingerprint = product_worktree_fingerprint(root)
     directory.mkdir(parents=True)
     dimension_order = [
-        "functional", "negative-boundary", "regression-compatibility",
-        "security-privacy", "performance-reliability", "operations-observability",
+        "functional", "performance-reliability", "evolvability-maintainability",
+        "negative-boundary", "regression-compatibility",
+        "security-privacy", "operations-observability",
         "migration-rollback", "documentation-deliverables",
     ]
     behavior_change = bool(args.behavior_change)
@@ -2178,7 +2203,7 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         ]
     )
     dimension_table = "\n".join(f"| {item} | TBD | TBD | TBD |" for item in required_dimensions)
-    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\nApproval state is stored only in state.json.\n"""
+    goal_text = f"""# {args.title}\n\n## Outcome\n\n{args.goal}\n\n## Non-goals\n\n- To be defined during planning.\n\n## Context and sources\n\n- Repository and domain context to be investigated.\n\n## Assumptions and decisions\n\n- Profile: {args.profile}.\n- Infer from repository and domain evidence before asking the user.\n\n## Questions requiring user decision\n\n- Only unresolved, high-impact choices belong here.\n\n## Current and target behavior\n\n- Current: Define during planning.\n- Target: Define during planning.\n\n## Solution boundaries and critical path\n\n- Define the responsible modules, main data path, important interface, and primary failure path.\n\n## Evolvability probe\n\n- Identify the most likely next change and the local extension point that should absorb it without rewriting the core flow.\n\n## Approved design\n\nPending user discussion and approval.\n\n## Acceptance dimensions\n\n| Dimension | COVERED or N_A | Rationale | Criterion IDs |\n| --- | --- | --- | --- |\n{dimension_table}\n\n## Acceptance criteria\n\n| ID | Kind | Observable outcome | What evidence proves | Negative or boundary cases | Basis | Verifier |\n| --- | --- | --- | --- | --- | --- | --- |\n| REQ-001 | MUST | Define during planning | Define during planning | Define during planning | Define during planning | Define during planning |\n\n## Milestones\n\n1. Complete the decision-ready design and acceptance contract.\n\n## Risks, migration, and rollback\n\n- To be defined during planning.\n\n## Approval\n\nApproval state is stored only in state.json.\n"""
     goal_text = goal_text.replace(
         "## Questions requiring user decision\\n\\n",
         "## Decision Check\\n\\n"
@@ -2208,40 +2233,24 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "`design/architecture.html` is its generated viewer.",
             1,
         )
+    if behavior_change:
+        goal_text = goal_text.replace(
+            "## Milestones\n\n",
+            "## Product scenarios\n\n"
+            "Choose 3–5 high-value scenarios when useful; the minimum is the real main path and one critical boundary or failure.\n\n"
+            "#### SCN-001 (REQ-001): Describe the main user path\n\n"
+            "- GIVEN the relevant starting state\n"
+            "- WHEN the user or system triggers the behavior\n"
+            "- THEN the observable result is produced\n\n"
+            "#### SCN-002 (REQ-001): Describe the most important boundary or failure\n\n"
+            "- GIVEN the critical boundary or dependency failure\n"
+            "- WHEN the same behavior is attempted\n"
+            "- THEN the system returns or recovers to a defined state\n\n"
+            "## Milestones\n\n",
+            1,
+        )
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
     (directory / "evidence.md").write_text(f"# Evidence — {args.title}\n", encoding="utf-8")
-    if behavior_change:
-        (directory / "delta.md").write_text(
-            """# Behavior Delta
-
-Describe only externally observable behavior changes. Use one of the sections below.
-
-## ADDED
-
-### REQ-001: Describe the added behavior
-
-#### SCN-001 (REQ-001): Describe the concrete scenario
-
-- GIVEN the starting state
-- WHEN the user or system performs an action
-- THEN the observable result is produced
-
-## MODIFIED
-
-## REMOVED
-
-""",
-            encoding="utf-8",
-        )
-        (directory / "tasks.md").write_text(
-            """# Tasks
-
-Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not require replan unless the approved contract changes.
-
-- [ ] T-001 (REQ-001, SCN-001): Implement and verify the behavior
-""",
-            encoding="utf-8",
-        )
     state = {
         "schema_version": SCHEMA_VERSION,
         "goal_id": goal_id,

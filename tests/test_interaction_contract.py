@@ -10,6 +10,7 @@ class InteractionContractTests(unittest.TestCase):
         self.skill = (ROOT / "goal-flow/skills/goal-flow/SKILL.md").read_text(encoding="utf-8")
         self.planning = (ROOT / "goal-flow/skills/goal-flow/references/planning.md").read_text(encoding="utf-8")
         self.execution = (ROOT / "goal-flow/skills/goal-flow/references/execution.md").read_text(encoding="utf-8")
+        self.verification = (ROOT / "goal-flow/skills/goal-flow/references/verification.md").read_text(encoding="utf-8")
         self.usage = (ROOT / "docs/usage.md").read_text(encoding="utf-8")
 
     def test_commit_language_follows_conversation_and_repo_convention(self) -> None:
@@ -31,6 +32,20 @@ class InteractionContractTests(unittest.TestCase):
         self.assertIn("fixed phrase", self.skill)
         self.assertIn("goal_flow_approval", self.skill + self.usage)
         self.assertIn("elicitation/create", self.skill + self.planning)
+
+    def test_quality_loop_stays_compact_and_product_shaped(self) -> None:
+        contract = self.skill + self.planning + self.execution + self.verification + self.usage
+        self.assertIn("evolvability probe", contract.lower())
+        self.assertIn("Implementation fidelity review", contract)
+        self.assertIn("Classic product scenario set", contract)
+        self.assertIn("3–5 scenarios", contract)
+        self.assertIn("delta.md` and `tasks.md` are optional", contract)
+        for dimension in (
+            "functional",
+            "performance-reliability",
+            "evolvability-maintainability",
+        ):
+            self.assertIn(dimension, self.planning)
 
 
 if __name__ == "__main__":

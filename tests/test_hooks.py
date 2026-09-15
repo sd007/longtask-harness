@@ -16,7 +16,7 @@ HOOKS_CONFIG = ROOT / "goal-flow" / "hooks" / "hooks.json"
 DIMENSIONS = [
     "functional", "negative-boundary", "regression-compatibility", "security-privacy",
     "performance-reliability", "operations-observability", "migration-rollback",
-    "documentation-deliverables",
+    "documentation-deliverables", "evolvability-maintainability",
 ]
 
 
@@ -74,7 +74,7 @@ class HookTests(unittest.TestCase):
         goal = self.repo / ".goal-flow" / "hook-goal" / "goal.md"
         dimension_lines = []
         for dimension in DIMENSIONS:
-            if dimension in {"functional", "negative-boundary"}:
+            if dimension in {"functional", "negative-boundary", "performance-reliability", "evolvability-maintainability"}:
                 rationale = f"{dimension} is covered by the hook acceptance criterion"
                 dimension_lines.append(f"- {dimension}: COVERED; {rationale}; REQ-001")
             else:
@@ -109,7 +109,7 @@ class HookTests(unittest.TestCase):
             "--minimum-evidence-mode", "real",
         )
         for dimension in DIMENSIONS:
-            if dimension in {"functional", "negative-boundary"}:
+            if dimension in {"functional", "negative-boundary", "performance-reliability", "evolvability-maintainability"}:
                 self.ctl(
                     "record", "dimension", "--id", dimension, "--status", "COVERED",
                     "--rationale", f"{dimension} is covered by the hook acceptance criterion",

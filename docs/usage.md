@@ -27,7 +27,9 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 如果你希望先看清整体结构，可直接说“先用架构图和数据流图对齐，再实现”。Goal Flow 会在合适时启用视觉设计，生成 `.goal-flow/<goal-id>/design/architecture.drawio` 和 `architecture.html`。前者可在 diagrams.net/Draw.io 直接编辑，后者可在 Codex 或浏览器完整查看。HTML 查看器联网加载官方脚本；需要离线时使用 `.drawio` 源文件。
 
-默认使用 `standard` profile；轻量 Standard 只登记功能维度、一个可观察 MUST 和一个有效检查。每个需求声明最低证据等级，每个检查声明角色、实际证据等级、覆盖需求、证明范围和局限。完整 Goal Flow、strict 和行为变化任务至少需要一个 `goal` 检查覆盖真实用户主路径；真实证据要求不能由 Mock 或模拟检查满足。只有完整 Goal Flow 或 strict 才强制填写完整的失败模式和依据链；`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。
+默认使用 `standard` profile；轻量 Standard 登记一个可观察 MUST、一个有效检查，并明确评估功能、性能/可靠性和可迭代性/可维护性。不相关的性能项可以写明理由后标记 `N_A`。完整 Goal Flow 再关注关键边界和回归兼容；strict 增加安全、迁移和生产运维等高风险维度。完整 Goal Flow、strict 和行为变化任务至少需要一个 `goal` 检查覆盖真实用户主路径；`plan-check` 未返回 `READY_FOR_APPROVAL` 时，控制器拒绝批准。
+
+方案不必写成长文档，但要让用户看清当前和目标状态、模块职责、关键成功与失败路径、非目标，以及下一次最可能变化应落在哪个扩展点。行为变化直接在 `goal.md` 写 Given/When/Then 场景即可，至少包含主路径和一个关键边界或失败；通常从主路径、业务边界、失败恢复、回归和性能冒烟中选择最关键的 3～5 个，不要求机械穷举。
 
 完整 Goal Flow、strict，以及行为变化/中风险 Standard 会调用内置 `goal_flow_approval` MCP 工具；支持 MCP elicitation 的宿主会弹出真正的“批准并执行”或“修改方案”控件。请求携带 `state_revision`，旧按钮不会覆盖新状态。`micro` 任务不创建完整审计目标，低风险 Standard 在没有高影响未决项时使用内部隐式批准。
 
@@ -54,7 +56,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 - `state.json`：唯一当前事实源，只能由 `goalctl.py` 修改；
 - `evidence.md`：只追加审批、验证回执、拒收和最终验收；
 - `events.jsonl`：只记录状态转换、验证、审批、拒收、阻塞和完成，不记录普通 `record/update`。
-- 行为变化目标还包含 `delta.md`（ADDED/MODIFIED/REMOVED）、`tasks.md`（可持续调整的任务清单）和 Given/When/Then 场景。
+- 行为变化目标把 Given/When/Then 场景直接放在 `goal.md`；大型变化可选用 `delta.md`（ADDED/MODIFIED/REMOVED）和 `tasks.md`（可持续调整的任务清单）。
 - 视觉目标还包含 `design/architecture.drawio`（审批语义源）和 `architecture.html`（可再生成的查看器）。
 
 `.goal-flow/active.json` 指向当前目标。可以执行：
@@ -71,7 +73,7 @@ python3 /path/to/goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/p
 
 `status/summary/report/gate` 同时返回 `stored_status`、`effective_status`、当前 Gate、结构化 freshness 和具体 `invalidated_paths`。已存储为 `READY_FOR_ACCEPTANCE` 的目标若被 `.DS_Store` 等产品文件污染，会有效显示为 `VERIFYING`。文本 `report` 按已证明、部分证明、未证明和残余风险复盘，并汇总墙钟时间、验证运行时间、验证次数、失败和拒收次数。
 
-v0.11 使用 schema v3，不读取 v1/v2 目标。控制器只返回明确错误并提示归档旧 `.goal-flow` 后重新初始化，不会自动迁移或删除旧状态。
+v0.12 使用 schema v3，不读取 v1/v2 目标。控制器只返回明确错误并提示归档旧 `.goal-flow` 后重新初始化，不会自动迁移或删除旧状态。
 
 ## 暂停、恢复和变更方案
 

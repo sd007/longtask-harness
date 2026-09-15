@@ -17,6 +17,7 @@ DIMENSIONS = [
     "functional",
     "negative-boundary",
     "regression-compatibility",
+    "evolvability-maintainability",
     "security-privacy",
     "performance-reliability",
     "operations-observability",
@@ -182,6 +183,8 @@ feature.txt exists with expected content.
 
 ## Acceptance dimensions
 - functional: COVERED; The observable file outcome is checked; REQ-001
+- performance-reliability: N_A; This isolated file change has no runtime performance path
+- evolvability-maintainability: COVERED; The change remains localized to the intended extension point; REQ-001
 
 ## Acceptance criteria
 REQ-001 | MUST | feature.txt exists with expected content
@@ -199,9 +202,17 @@ Required check TEST: test -f feature.txt
             "record", "dimension", "--goal-id", "light-standard", "--id", "functional", "--status", "COVERED",
             "--rationale", "The observable file outcome is checked", "--requirement-id", "REQ-001",
         )
+        self.ctl(
+            "record", "dimension", "--goal-id", "light-standard", "--id", "performance-reliability", "--status", "N_A",
+            "--rationale", "This isolated file change has no runtime performance path",
+        )
+        self.ctl(
+            "record", "dimension", "--goal-id", "light-standard", "--id", "evolvability-maintainability", "--status", "COVERED",
+            "--rationale", "The change remains localized to the intended extension point", "--requirement-id", "REQ-001",
+        )
         ready = self.ctl("plan-check", "--goal-id", "light-standard")
         self.assertEqual(ready["gate"], "READY_FOR_APPROVAL")
-        self.assertEqual(ready["dimensions_total"], 1)
+        self.assertEqual(ready["dimensions_total"], 3)
 
     def test_standard_preserves_dirty_baseline_but_rejects_new_drift(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
@@ -213,10 +224,7 @@ Required check TEST: test -f feature.txt
         self.write_complete_goal_for("baseline-standard")
         self.record_check("--goal-id", "baseline-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("baseline-standard")
-        self.ctl(
-            "record", "dimension", "--goal-id", "baseline-standard", "--id", "functional", "--status", "COVERED",
-            "--rationale", "functional is covered by the observable acceptance criterion", "--requirement-id", "REQ-001",
-        )
+        self.register_dimensions_for("baseline-standard")
         self.ctl("approve", "--goal-id", "baseline-standard", "--auto-approved", "--next-action", "Implement baseline task")
         self.commit_product()
         (self.repo / "new-drift.txt").write_text("unexpected\n", encoding="utf-8")
@@ -246,6 +254,12 @@ Required check TEST: test -f feature.txt
 - WHEN the feature is invoked
 - THEN the expected result is returned
 
+#### SCN-002 (REQ-001): Feature handles its key boundary
+
+- GIVEN the expected artifact is not available
+- WHEN the feature is invoked
+- THEN a defined failure result is returned
+
 ## MODIFIED
 ## REMOVED
 """,
@@ -257,10 +271,7 @@ Required check TEST: test -f feature.txt
         )
         self.record_check("--goal-id", "behavior-standard", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
         self.register_requirement_for("behavior-standard")
-        self.ctl(
-            "record", "dimension", "--goal-id", "behavior-standard", "--id", "functional", "--status", "COVERED",
-            "--rationale", "functional is covered by the observable acceptance criterion", "--requirement-id", "REQ-001",
-        )
+        self.register_dimensions_for("behavior-standard")
         self.ctl("approve", "--goal-id", "behavior-standard", "--auto-approved", "--next-action", "Implement behavior task")
         sha = self.commit_product()
         self.record_complete_evidence(sha)
@@ -319,7 +330,7 @@ Required check TEST: test -f feature.txt
         self.assertEqual(completed["gate"], "ACCEPTED")
         self.assertFalse(self.ctl("status")["active"])
 
-    def test_behavior_change_scaffolds_harness_delta_and_tasks(self) -> None:
+    def test_behavior_change_scaffolds_scenarios_without_extra_management_files(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
         initialized = self.ctl(
             "init", "--goal-id", "behavior-goal", "--title", "Behavior Goal",
@@ -330,8 +341,12 @@ Required check TEST: test -f feature.txt
         self.assertEqual(state["harness"]["mode"], "standard")
         self.assertTrue(state["harness"]["behavior_change"])
         directory = self.repo / ".goal-flow" / "behavior-goal"
-        self.assertTrue((directory / "delta.md").exists())
-        self.assertTrue((directory / "tasks.md").exists())
+        self.assertFalse((directory / "delta.md").exists())
+        self.assertFalse((directory / "tasks.md").exists())
+        goal_text = (directory / "goal.md").read_text(encoding="utf-8")
+        self.assertIn("## Product scenarios", goal_text)
+        self.assertIn("SCN-001", goal_text)
+        self.assertIn("SCN-002", goal_text)
         review = self.ctl("review", "--goal-id", "behavior-goal", expected=1)
         self.assertEqual(review["status"], "BLOCK")
 
@@ -356,6 +371,12 @@ Required check TEST: test -f feature.txt
 - WHEN the feature is invoked
 - THEN the expected result is returned
 
+#### SCN-002 (REQ-001): Feature handles its key boundary
+
+- GIVEN the expected artifact is not available
+- WHEN the feature is invoked
+- THEN a defined failure result is returned
+
 ## MODIFIED
 
 ## REMOVED
@@ -371,10 +392,59 @@ Required check TEST: test -f feature.txt
         self.register_dimensions_for("behavior-goal")
         review = self.ctl("review", "--goal-id", "behavior-goal")
         self.assertEqual(review["status"], "WARN")
-        self.assertEqual(review["scenario_count"], 1)
+        self.assertEqual(review["scenario_count"], 2)
         self.assertEqual(review["task_count"], 1)
         strict = self.ctl("review", "--goal-id", "behavior-goal", "--strict", expected=1)
         self.assertEqual(strict["status"], "BLOCK")
+
+    def test_behavior_change_review_uses_goal_scenarios_without_optional_files(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "goal-only-behavior", "--title", "Goal-only Behavior",
+            "--goal", "Change observable behavior", "--behavior-change", "--mode", "standard",
+        )
+        self.write_complete_goal_for("goal-only-behavior")
+        directory = self.repo / ".goal-flow" / "goal-only-behavior"
+        goal = directory / "goal.md"
+        goal.write_text(
+            goal.read_text(encoding="utf-8")
+            + """
+
+## Product scenarios
+
+#### SCN-001 (REQ-001): Feature succeeds
+- GIVEN the repository is ready
+- WHEN the feature is invoked
+- THEN the expected result is returned
+""",
+            encoding="utf-8",
+        )
+        self.record_check(
+            "--goal-id", "goal-only-behavior", "--id", "TEST", "--status", "PENDING",
+            "--required", "--command", "test -f feature.txt",
+        )
+        self.register_requirement_for("goal-only-behavior")
+        self.register_dimensions_for("goal-only-behavior")
+        incomplete = self.ctl("review", "--goal-id", "goal-only-behavior", expected=1)
+        self.assertEqual(incomplete["status"], "BLOCK")
+        self.assertTrue(any("at least two focused scenarios" in item["message"] for item in incomplete["findings"]))
+        goal.write_text(
+            goal.read_text(encoding="utf-8")
+            + """
+
+#### SCN-002 (REQ-001): Feature handles its key boundary
+- GIVEN the expected artifact is unavailable
+- WHEN the feature is invoked
+- THEN a defined failure result is returned
+""",
+            encoding="utf-8",
+        )
+        review = self.ctl("review", "--goal-id", "goal-only-behavior")
+        self.assertEqual(review["status"], "WARN")
+        self.assertEqual(review["scenario_count"], 2)
+        self.assertEqual(review["task_count"], 0)
+        self.assertFalse((directory / "delta.md").exists())
+        self.assertFalse((directory / "tasks.md").exists())
 
     def test_standard_requires_core_dimensions_but_strict_requires_all(self) -> None:
         self.write_complete_goal()
@@ -384,10 +454,10 @@ Required check TEST: test -f feature.txt
         )
         self.register_requirement()
         for dimension in [
-            "functional", "negative-boundary", "regression-compatibility",
-            "documentation-deliverables",
+            "functional", "performance-reliability", "evolvability-maintainability",
+            "negative-boundary", "regression-compatibility",
         ]:
-            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+            if dimension in {"functional", "performance-reliability", "evolvability-maintainability", "negative-boundary"}:
                 self.ctl(
                     "record", "dimension", "--id", dimension, "--status", "COVERED",
                     "--rationale", f"{dimension} is covered by the observable acceptance criterion",
@@ -400,7 +470,7 @@ Required check TEST: test -f feature.txt
                 )
         standard = self.ctl("plan-check")
         self.assertEqual(standard["gate"], "READY_FOR_APPROVAL")
-        self.assertEqual(standard["dimensions_total"], 4)
+        self.assertEqual(standard["dimensions_total"], 5)
 
         state_path = self.repo / ".goal-flow" / "test-goal" / "state.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -556,7 +626,7 @@ Required check TEST: test -f feature.txt
         goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
         dimension_lines = []
         for dimension in DIMENSIONS:
-            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+            if dimension in {"functional", "negative-boundary", "performance-reliability", "evolvability-maintainability", "documentation-deliverables"}:
                 rationale = f"{dimension} is covered by the observable acceptance criterion"
                 dimension_lines.append(f"- {dimension}: COVERED; {rationale}; REQ-001")
             else:
@@ -583,6 +653,9 @@ Ship an observable feature.
 ## Approved design
 Add feature.txt with deterministic behavior.
 
+## Evolvability probe
+The next similar file remains a local addition without changing the controller state machine.
+
 ## Acceptance dimensions
 {chr(10).join(dimension_lines)}
 
@@ -608,7 +681,7 @@ Required check TEST: {check_command}
         goal = self.repo / ".goal-flow" / goal_id / "goal.md"
         dimension_lines = []
         for dimension in DIMENSIONS:
-            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+            if dimension in {"functional", "negative-boundary", "performance-reliability", "evolvability-maintainability", "documentation-deliverables"}:
                 rationale = f"{dimension} is covered by the observable acceptance criterion"
                 dimension_lines.append(f"- {dimension}: COVERED; {rationale}; REQ-001")
             else:
@@ -634,6 +707,9 @@ Ship an observable feature.
 
 ## Approved design
 Add feature.txt with deterministic behavior.
+
+## Evolvability probe
+The next similar file remains a local addition without changing the controller state machine.
 
 ## Acceptance dimensions
 {chr(10).join(dimension_lines)}
@@ -686,7 +762,7 @@ Required check TEST: {check_command}
 
     def register_dimensions(self) -> None:
         for dimension in DIMENSIONS:
-            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+            if dimension in {"functional", "negative-boundary", "performance-reliability", "evolvability-maintainability", "documentation-deliverables"}:
                 self.ctl(
                     "record", "dimension", "--id", dimension, "--status", "COVERED",
                     "--rationale", f"{dimension} is covered by the observable acceptance criterion",
@@ -700,7 +776,7 @@ Required check TEST: {check_command}
 
     def register_dimensions_for(self, goal_id: str) -> None:
         for dimension in DIMENSIONS:
-            if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
+            if dimension in {"functional", "negative-boundary", "performance-reliability", "evolvability-maintainability", "documentation-deliverables"}:
                 self.ctl(
                     "record", "dimension", "--goal-id", goal_id, "--id", dimension, "--status", "COVERED",
                     "--rationale", f"{dimension} is covered by the observable acceptance criterion",
@@ -932,7 +1008,7 @@ Required check TEST: {check_command}
         self.prepare_plan()
         ready = self.ctl("plan-check")
         self.assertEqual(ready["gate"], "READY_FOR_APPROVAL")
-        self.assertEqual(ready["dimensions_assessed"], 4)
+        self.assertEqual(ready["dimensions_assessed"], 5)
 
     def test_visual_design_scaffold_is_editable_previewable_and_required(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
@@ -981,12 +1057,7 @@ Required check TEST: {check_command}
             "--required", "--command", "test -f feature.txt",
         )
         self.register_requirement_for("visual-contract")
-        self.ctl(
-            "record", "dimension", "--goal-id", "visual-contract", "--id", "functional",
-            "--status", "COVERED", "--rationale",
-            "functional is covered by the observable acceptance criterion",
-            "--requirement-id", "REQ-001",
-        )
+        self.register_dimensions_for("visual-contract")
         self.ctl("design-render", "--goal-id", "visual-contract")
         self.assertEqual(self.ctl("plan-check", "--goal-id", "visual-contract")["gate"], "READY_FOR_APPROVAL")
         auto = self.ctl(

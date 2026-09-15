@@ -4,7 +4,7 @@
   "approved_by": "user",
   "approved_definitions_hash": "09f0cce1a57d946625c8ea02fe8c073e2257046e2472ff30acea33fa0ea15003",
   "approved_design_hash": "d462eb020541733193ef3c4d7ff43f8c0d69b84df3eb1617e17c012569f1654f",
-  "branch": "codex/visual-requirements-design",
+  "branch": "codex/goal-flow-streamline-quality-loop",
   "checks": {
     "CHK-ALL": {
       "command": "python3 -m unittest discover -s tests -v",
@@ -82,7 +82,16 @@
       "updated_at": "2026-09-15T06:41:48Z"
     }
   },
-  "epoch": null,
+  "epoch": {
+    "completed_at": null,
+    "started_at": "2026-09-15T06:54:42Z",
+    "target_check_ids": [
+      "CHK-ALL"
+    ],
+    "target_requirement_ids": [
+      "REQ-001"
+    ]
+  },
   "goal_id": "streamline-quality-loop",
   "goal_revision": 1,
   "harness": {
@@ -100,7 +109,7 @@
   },
   "last_stop_fingerprint": null,
   "last_verified_commit": null,
-  "next_action": "\u8c03\u6574\u63a7\u5236\u5668\u8d28\u91cf\u6a21\u578b\u3001\u7cbe\u7b80\u884c\u4e3a\u573a\u666f\u534f\u8bae\u5e76\u66f4\u65b0\u6d4b\u8bd5",
+  "next_action": "\u63d0\u4ea4\u5b9e\u73b0\u5019\u9009\u5e76\u8fd0\u884c\u51bb\u7ed3\u9a8c\u6536\u68c0\u67e5",
   "no_progress_count": 0,
   "profile": "standard",
   "requirements": {
@@ -172,11 +181,17 @@
   "resume_status": null,
   "risks": {},
   "schema_version": 3,
-  "state_revision": 10,
+  "state_revision": 12,
   "status": "EXECUTING",
   "stop_repeat_count": 0,
   "title": "\u7cbe\u7b80 Goal Flow \u8d28\u91cf\u95ed\u73af",
-  "updated_at": "2026-09-15T06:42:19Z",
+  "updated_at": "2026-09-15T06:54:42Z",
   "wait_reason": null,
-  "worktree_binding": null
+  "worktree_binding": {
+    "branch": "codex/goal-flow-streamline-quality-loop",
+    "git_dir": "/Users/sd/workspace/ai-project/longtask-harness/.git",
+    "is_primary_worktree": true,
+    "isolation_mode": "isolated_branch",
+    "root": "/Users/sd/workspace/ai-project/longtask-harness"
+  }
 }
