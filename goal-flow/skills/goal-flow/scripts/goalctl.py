@@ -254,6 +254,8 @@ def classify_harness(
     behavior_change: bool = False,
     cross_session: bool = False,
     autonomous: bool = False,
+    new_project: bool = False,
+    major_feature: bool = False,
     default_mode: str = "auto",
 ) -> dict[str, Any]:
     """Choose the smallest harness that covers the task's observable risk."""
@@ -264,6 +266,27 @@ def classify_harness(
     if risk_level not in RISK_LEVELS:
         raise GoalFlowError(f"invalid risk level: {risk_level}")
     reasons: list[str] = []
+    inferred_major_feature = bool(
+        major_feature or (task_type == "feature" and (files >= 8 or steps >= 5))
+    )
+    isolation_required = bool(
+        new_project
+        or inferred_major_feature
+        or risk_level in {"high", "critical"}
+        or task_type == "migration"
+        or default_mode == "strict"
+    )
+    isolation_reasons: list[str] = []
+    if new_project:
+        isolation_reasons.append("new project")
+    if inferred_major_feature:
+        isolation_reasons.append("major feature scope")
+    if risk_level in {"high", "critical"}:
+        isolation_reasons.append("high-impact risk")
+    if task_type == "migration":
+        isolation_reasons.append("migration")
+    if default_mode == "strict":
+        isolation_reasons.append("strict profile")
     # An explicitly requested harness is a user constraint, not a hint for
     # auto-classification.  Only ``auto`` may be reduced or upgraded from the
     # task characteristics below.
@@ -289,6 +312,8 @@ def classify_harness(
                 "steps": steps,
                 "cross_session": bool(cross_session),
                 "autonomous": bool(autonomous),
+                "new_project": bool(new_project),
+                "major_feature": inferred_major_feature,
             },
             "reasons": reasons,
             "harness": {
@@ -296,6 +321,8 @@ def classify_harness(
                 "approval": "required" if mode == "goal-flow" else "conditional",
                 "evidence": "strict" if profile == "strict" else "standard",
                 "resume": mode == "goal-flow",
+                "isolation_required": isolation_required,
+                "isolation_reasons": isolation_reasons,
             },
         }
     strict_risk = risk_level in {"high", "critical"} or task_type == "migration"
@@ -332,6 +359,8 @@ def classify_harness(
             "steps": steps,
             "cross_session": bool(cross_session),
             "autonomous": bool(autonomous),
+            "new_project": bool(new_project),
+            "major_feature": inferred_major_feature,
         },
         "reasons": reasons,
         "harness": {
@@ -339,6 +368,8 @@ def classify_harness(
             "approval": "required" if mode == "goal-flow" else "conditional",
             "evidence": "strict" if profile == "strict" else "standard",
             "resume": mode == "goal-flow",
+            "isolation_required": isolation_required,
+            "isolation_reasons": isolation_reasons,
         },
     }
 
@@ -1087,6 +1118,8 @@ def enforce_isolation_policy(
         return
     binding = binding or state.get("worktree_binding") or {}
     mode = binding.get("isolation_mode")
+    if mode == "shared_current_worktree":
+        return
     if mode == "explicit_current_worktree":
         if not binding.get("override_reason"):
             raise GoalFlowError("Current-worktree exceptions require an audit reason")
@@ -1100,6 +1133,18 @@ def enforce_isolation_policy(
         "Full/strict goals require a codex/goal-flow-* branch or an independent Git worktree; "
         "use --allow-current-worktree --reason only for an explicit exception"
     )
+
+
+def requires_isolated_worktree(state: dict[str, Any]) -> bool:
+    """Return the explicit isolation decision for new goals.
+
+    Older state files predate this policy field; preserve their historical
+    full/strict behavior while making new ordinary Goal Flow goals stay put.
+    """
+    harness = state.get("harness") or {}
+    if "isolation_required" in harness:
+        return bool(harness["isolation_required"])
+    return resolve_harness(state) in {"goal-flow", "strict"}
 
 
 def require_bound_worktree(root: Path, state: dict[str, Any]) -> None:
@@ -1366,7 +1411,9 @@ def validate_state(state: dict[str, Any]) -> list[str]:
         errors.append("decision_check user_decisions must be a list")
     binding = state.get("worktree_binding")
     if binding:
-        if binding.get("isolation_mode") not in {"isolated_branch", "isolated_worktree", "explicit_current_worktree"}:
+        if binding.get("isolation_mode") not in {
+            "isolated_branch", "isolated_worktree", "explicit_current_worktree", "shared_current_worktree",
+        }:
             errors.append("invalid worktree isolation_mode")
         if binding.get("isolation_mode") == "explicit_current_worktree" and not binding.get("override_reason"):
             errors.append("current-worktree exception needs override_reason")
@@ -2180,6 +2227,8 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         behavior_change=behavior_change,
         cross_session=args.cross_session,
         autonomous=args.autonomous,
+        new_project=bool(args.new_project or current_git_sha(root) == "UNBORN"),
+        major_feature=args.major_feature,
         default_mode=args.mode,
     )
     # ``init`` creates a persistent Goal Flow record; keep it at least
@@ -2193,6 +2242,10 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         classification["harness"]["resume"] = False
         classification["reasons"].append("persistent goals use at least the Standard harness")
     profile = "strict" if args.profile == "standard" and classification["profile"] == "strict" else args.profile
+    if profile == "strict":
+        classification["harness"]["isolation_required"] = True
+        if "strict profile" not in classification["harness"]["isolation_reasons"]:
+            classification["harness"]["isolation_reasons"].append("strict profile")
     mode = classification["mode"]
     required_dimensions = (
         dimension_order
@@ -2265,6 +2318,10 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "risk_level": args.risk_level,
             "behavior_change": behavior_change,
             "visual_design": bool(args.visual_design),
+            "new_project": bool(args.new_project or current_git_sha(root) == "UNBORN"),
+            "major_feature": classification["inputs"].get("major_feature", False),
+            "isolation_required": classification["harness"].get("isolation_required", False),
+            "isolation_reasons": classification["harness"].get("isolation_reasons", []),
             "baseline_product_fingerprint": baseline_product_fingerprint,
             "baseline_git_sha": current_git_sha(root),
             "classification_reasons": classification["reasons"],
@@ -2771,6 +2828,8 @@ def cmd_classify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         behavior_change=args.behavior_change,
         cross_session=args.cross_session,
         autonomous=args.autonomous,
+        new_project=bool(args.new_project or current_git_sha(root) == "UNBORN"),
+        major_feature=args.major_feature,
         default_mode=args.default_mode,
     )
     result["goal"] = args.goal
@@ -2811,7 +2870,7 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             raise GoalFlowError("--allow-current-worktree requires a non-empty --reason")
         binding["isolation_mode"] = "explicit_current_worktree"
         binding["override_reason"] = args.reason.strip()
-    else:
+    elif requires_isolated_worktree(state):
         if (
             resolve_harness(state) in {"goal-flow", "strict"}
             and binding.get("is_primary_worktree") is not False
@@ -2835,6 +2894,9 @@ def cmd_bind_worktree(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             else "isolated_branch"
         )
         enforce_isolation_policy(root, state, binding)
+    else:
+        binding["isolation_mode"] = "shared_current_worktree"
+        binding["policy_reason"] = "ordinary task does not meet the isolation threshold"
     state["worktree_binding"] = binding
     state["branch"] = binding["branch"]
     save_state(directory, state)
@@ -3613,6 +3675,8 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--steps", type=int, default=1)
     init.add_argument("--cross-session", action="store_true")
     init.add_argument("--autonomous", action="store_true")
+    init.add_argument("--new-project", action="store_true", help="mark a new project that should be isolated")
+    init.add_argument("--major-feature", action="store_true", help="mark a major feature that should be isolated")
     init.add_argument(
         "--switch",
         dest="switch_active",
@@ -3699,6 +3763,8 @@ def build_parser() -> argparse.ArgumentParser:
     classify.add_argument("--cross-session", action="store_true")
     classify.add_argument("--autonomous", action="store_true")
     classify.add_argument("--behavior-change", action="store_true")
+    classify.add_argument("--new-project", action="store_true")
+    classify.add_argument("--major-feature", action="store_true")
     classify.add_argument(
         "--default-mode", choices=["auto", "micro", "standard", "goal-flow", "strict"], default="auto"
     )

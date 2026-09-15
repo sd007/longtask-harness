@@ -39,7 +39,7 @@ Codex 首先自行调查仓库、既有规范、历史、相关领域知识和�
 
 ## 自动执行阶段
 
-批准后，完整 Goal Flow/strict 在实现分支执行 `bind-worktree`。普通主工作区会自动创建 `codex/goal-flow-<goal-id>` 隔离分支；若确需当前分支，必须显式使用 `--allow-current-worktree --reason`，原因会写入审计状态。Standard 任务可以留在当前工作树；控制器会记录初始化时的产品基线，允许基线中的既有修改保持不变，但会拒绝验证基线之外的未提交变化。提交说明默认使用当前对话语言，仓库已有规范优先。检查回执包含唯一 receipt、真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
+批准后，目标执行 `bind-worktree`。普通任务（包括普通 Goal Flow）留在当前分支；只有新项目、重大特性、迁移或 high/critical 风险才自动创建并切换到 `codex/goal-flow-<goal-id>` 隔离分支或独立 worktree。任何任务都可以显式使用 `--allow-current-worktree --reason`，原因会写入审计状态。Standard 任务会记录初始化时的产品基线，允许既有基线修改保持不变，但会拒绝验证基线之外的未提交变化。提交说明默认使用当前对话语言，仓库已有规范优先。检查回执包含唯一 receipt、真实退出码、输出摘要与哈希、环境指纹和被测试的 Git SHA，超时会清理整个进程组。自由文本不能把检查标记为 PASS。
 
 日常只需要关注两类打断：
 
@@ -106,7 +106,7 @@ Gate 通过后，完整 Goal Flow 和发生行为变化、中风险或启用视�
 
 ## Git 约定
 
-- 完整 Goal Flow 使用 `codex/goal-flow-<goal-id>` 分支或隔离 worktree；Standard 默认使用当前工作树；
+- 新项目、重大特性、迁移或 high/critical 风险使用 `codex/goal-flow-<goal-id>` 分支或隔离 worktree；普通 Goal Flow 与 Standard 默认使用当前工作树；
 - 每个实现提交应是可恢复、通过声明检查的完整里程碑；
 - `.goal-flow/` 审计更新单独提交；
 - 证据绑定被测试的实现 SHA。其后的纯 `.goal-flow/` 提交不会让证据过期，任何其他文件变化都会；

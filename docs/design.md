@@ -42,7 +42,7 @@ v0.12 的 `state.json` 使用 schema v3，是唯一当前事实源。v1/v2 明�
 
 ## 状态一致性与执行边界
 
-控制器用 `.goal-flow/controller.lock` 的文件锁串行化读写，用递增 `state_revision` 做 compare-and-swap，避免并发更新静默覆盖。完整 Goal Flow/strict 批准后的目标必须绑定 `codex/goal-flow-*` 分支或独立 worktree；当前工作区例外必须带原因并写入绑定状态。Standard 记录初始化时的产品指纹，允许既有基线修改保持不变，但会阻止基线之外的变化进入验证。新目标不会静默覆盖活动目标，切换必须显式暂停旧目标；恢复指定目标时会同步 active 指针。
+控制器用 `.goal-flow/controller.lock` 的文件锁串行化读写，用递增 `state_revision` 做 compare-and-swap，避免并发更新静默覆盖。批准后的目标都会绑定当前工作树；只有新项目、重大特性、迁移或 high/critical 风险才自动切换到 `codex/goal-flow-*` 分支或独立 worktree，普通任务留在当前分支。Standard 记录初始化时的产品指纹，允许既有基线修改保持不变，但会阻止基线之外的变化进入验证。新目标不会静默覆盖活动目标，切换必须显式暂停旧目标；恢复指定目标时会同步 active 指针。
 
 ## Assurance 而非伪概率
 

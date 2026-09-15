@@ -118,4 +118,4 @@ python3 goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project re
 - 安装失败：先运行 `./install.sh --dry-run` 查看将执行的操作。
 - 旧目标报 schema 不兼容：先归档旧 `.goal-flow`，再重新初始化；v0.12 不会自动修改或删除 v1/v2 状态。
 
-更多内容见[安装说明](docs/installation.md)、[使用说明](docs/usage.md)和[设计说明](docs/design.md)。当前版本为 `0.12.0`（schema v3）。
+更多内容见[安装说明](docs/installation.md)、[使用说明](docs/usage.md)和[设计说明](docs/design.md)。当前版本为 `0.12.1`（schema v3）。

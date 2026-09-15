@@ -97,6 +97,27 @@ class GoalCtlTests(unittest.TestCase):
         self.assertEqual(long_task["mode"], "goal-flow")
         self.assertEqual(long_task["profile"], "strict")
 
+    def test_classify_isolates_only_new_major_or_high_impact_work(self) -> None:
+        ordinary = self.ctl(
+            "classify", "--goal", "Refine a normal feature", "--task-type", "feature",
+            "--risk-level", "medium", "--files", "3", "--steps", "3", "--default-mode", "goal-flow",
+        )
+        self.assertFalse(ordinary["harness"]["isolation_required"])
+        major = self.ctl(
+            "classify", "--goal", "Ship a major feature", "--task-type", "feature",
+            "--files", "8", "--steps", "5", "--default-mode", "goal-flow",
+        )
+        self.assertTrue(major["harness"]["isolation_required"])
+        new_project = self.ctl(
+            "classify", "--goal", "Start a new project", "--new-project", "--default-mode", "goal-flow",
+        )
+        self.assertTrue(new_project["harness"]["isolation_required"])
+        high_risk = self.ctl(
+            "classify", "--goal", "Migrate production data", "--task-type", "migration",
+            "--risk-level", "high", "--default-mode", "goal-flow",
+        )
+        self.assertTrue(high_risk["harness"]["isolation_required"])
+
     def test_explicit_harness_mode_is_never_downgraded(self) -> None:
         goal_flow = self.ctl(
             "classify", "--goal", "Add a user-visible feature", "--behavior-change",
@@ -295,6 +316,39 @@ Required check TEST: test -f feature.txt
         binding = self.ctl("bind-worktree", "--goal-id", "standard-goal")
         self.assertTrue(binding["skipped"])
         self.assertIsNone(binding["state"]["worktree_binding"])
+
+    def test_goal_flow_ordinary_task_stays_on_current_branch(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "ordinary-goal-flow", "--title", "Ordinary Goal Flow",
+            "--goal", "Ship a normal feature", "--mode", "goal-flow", "--task-type", "feature",
+            "--risk-level", "medium", "--files", "3", "--steps", "3",
+        )
+        self.write_complete_goal_for("ordinary-goal-flow")
+        self.record_check("--goal-id", "ordinary-goal-flow", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("ordinary-goal-flow")
+        self.register_dimensions_for("ordinary-goal-flow")
+        self.ctl("approve", "--goal-id", "ordinary-goal-flow", "--user-approved", "--next-action", "Implement ordinary task")
+        branch_before = self.git("branch", "--show-current")
+        binding = self.ctl("bind-worktree", "--goal-id", "ordinary-goal-flow")
+        self.assertEqual(binding["state"]["worktree_binding"]["isolation_mode"], "shared_current_worktree")
+        self.assertEqual(binding["state"]["worktree_binding"]["branch"], branch_before)
+
+    def test_goal_flow_major_feature_switches_to_isolated_branch(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "major-goal-flow", "--title", "Major Goal Flow",
+            "--goal", "Ship a major feature", "--mode", "goal-flow", "--task-type", "feature",
+            "--major-feature",
+        )
+        self.write_complete_goal_for("major-goal-flow")
+        self.record_check("--goal-id", "major-goal-flow", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("major-goal-flow")
+        self.register_dimensions_for("major-goal-flow")
+        self.ctl("approve", "--goal-id", "major-goal-flow", "--user-approved", "--next-action", "Implement major task")
+        binding = self.ctl("bind-worktree", "--goal-id", "major-goal-flow")
+        self.assertEqual(binding["state"]["worktree_binding"]["isolation_mode"], "isolated_branch")
+        self.assertTrue(binding["state"]["worktree_binding"]["branch"].startswith("codex/goal-flow-"))
 
     def test_strict_profile_never_uses_lightweight_standard_shortcuts(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")

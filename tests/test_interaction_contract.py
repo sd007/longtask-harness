@@ -47,6 +47,11 @@ class InteractionContractTests(unittest.TestCase):
         ):
             self.assertIn(dimension, self.planning)
 
+    def test_branch_isolation_defaults_to_shared_worktree(self) -> None:
+        self.assertIn("ordinary tasks on the current branch", self.skill)
+        self.assertIn("普通任务（包括普通 Goal Flow）留在当前分支", self.usage)
+        self.assertIn("new projects, major features, migrations", self.skill)
+
 
 if __name__ == "__main__":
     unittest.main()

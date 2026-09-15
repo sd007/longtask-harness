@@ -1,0 +1,139 @@
+{
+  "approval_mode": "explicit",
+  "approved": true,
+  "approved_by": "user",
+  "approved_definitions_hash": "aaacfb3952e9ec0a44923516447abd625dc01047a4a88c4285e06e82e720fdde",
+  "approved_design_hash": "1457a27fe8cab657f215ffac0dff19b64572e8855630bf9db0b7133be203e825",
+  "branch": "codex/goal-flow-streamline-quality-loop",
+  "checks": {
+    "CHK-ALL": {
+      "command": "python3 -m unittest discover -s tests -v",
+      "covers": [
+        "REQ-001"
+      ],
+      "evidence_mode": "real",
+      "git_sha": null,
+      "limitations": "\u4e0d\u8bc1\u660e\u5916\u90e8\u4ed3\u5e93\u7684\u5206\u652f\u7b56\u7565\u6216\u56e2\u961f\u4e1a\u52a1\u5224\u65ad\u3002",
+      "output_digest": null,
+      "product_fingerprint": null,
+      "proves": "\u9a8c\u8bc1\u666e\u901a\u4efb\u52a1\u4e0e\u9ad8\u5f71\u54cd\u4efb\u52a1\u7684\u5206\u652f\u7ed1\u5b9a\u7b56\u7565\u4ee5\u53ca\u65e2\u6709 Standard/\u663e\u5f0f\u8986\u76d6\u884c\u4e3a\u3002",
+      "required": true,
+      "role": "goal",
+      "status": "PENDING",
+      "summary": null,
+      "timeout": 300,
+      "updated_at": "2026-09-15T07:07:12Z"
+    }
+  },
+  "contract_version": 4,
+  "created_at": "2026-09-15T07:06:36Z",
+  "current_milestone": "M1",
+  "decision_check": {
+    "auto_decided": [
+      "\u4fdd\u7559 Standard \u5f53\u524d\u5de5\u4f5c\u6811\uff1b\u628a\u9694\u79bb\u5224\u5b9a\u96c6\u4e2d\u4e3a\u4e00\u4e2a\u53ef\u6d4b\u8bd5\u7b56\u7565\uff1b\u9ad8\u98ce\u9669\u548c\u8fc1\u79fb\u7ee7\u7eed\u9694\u79bb\u3002"
+    ],
+    "recommended_defaults": [
+      "\u65b0\u9879\u76ee\u901a\u8fc7\u663e\u5f0f `--new-project` \u6807\u8bb0\uff1b\u91cd\u5927\u7279\u6027\u901a\u8fc7\u663e\u5f0f `--major-feature` \u6216\u660e\u786e\u7684\u5927\u89c4\u6a21 feature \u5f62\u6001\u8bc6\u522b\u3002"
+    ],
+    "status": "resolved",
+    "user_decisions": []
+  },
+  "delivery_attempt": 0,
+  "delivery_feedback": null,
+  "delivery_rejection_baseline": null,
+  "dimensions": {
+    "evolvability-maintainability": {
+      "rationale": "\u9694\u79bb\u89e6\u53d1\u6761\u4ef6\u96c6\u4e2d\u5728\u53ef\u6269\u5c55\u7b56\u7565\u51fd\u6570\u3002",
+      "requirement_ids": [
+        "REQ-001"
+      ],
+      "status": "COVERED",
+      "updated_at": "2026-09-15T07:07:13Z"
+    },
+    "functional": {
+      "rationale": "\u5206\u7c7b\u4e0e\u7ed1\u5b9a\u884c\u4e3a\u7531\u5355\u5143\u6d4b\u8bd5\u9a8c\u8bc1\u3002",
+      "requirement_ids": [
+        "REQ-001"
+      ],
+      "status": "COVERED",
+      "updated_at": "2026-09-15T07:07:13Z"
+    },
+    "negative-boundary": {
+      "rationale": "\u8986\u76d6\u666e\u901a\u4efb\u52a1\u4e0d\u5207\u6362\u3001\u65b0\u9879\u76ee/\u91cd\u5927\u7279\u6027/\u9ad8\u98ce\u9669\u5207\u6362\u3002",
+      "requirement_ids": [
+        "REQ-001"
+      ],
+      "status": "COVERED",
+      "updated_at": "2026-09-15T07:07:13Z"
+    },
+    "performance-reliability": {
+      "rationale": "\u4ec5\u6539\u53d8\u672c\u5730\u5206\u652f\u9009\u62e9\uff0c\u4e0d\u6539\u53d8\u8fd0\u884c\u65f6\u6027\u80fd\u8def\u5f84\u3002",
+      "requirement_ids": [],
+      "status": "N_A",
+      "updated_at": "2026-09-15T07:07:13Z"
+    },
+    "regression-compatibility": {
+      "rationale": "\u4fdd\u7559 Standard \u5f53\u524d\u5de5\u4f5c\u6811\u548c\u663e\u5f0f\u8986\u76d6\u884c\u4e3a\u3002",
+      "requirement_ids": [
+        "REQ-001"
+      ],
+      "status": "COVERED",
+      "updated_at": "2026-09-15T07:07:13Z"
+    }
+  },
+  "epoch": null,
+  "goal_id": "branch-isolation-policy",
+  "goal_revision": 1,
+  "harness": {
+    "baseline_git_sha": "9bb1859e3f1611040c520c4614cc5c2022763fb4",
+    "baseline_product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
+    "behavior_change": true,
+    "classification_reasons": [
+      "using the explicitly requested harness"
+    ],
+    "mode": "goal-flow",
+    "requested_mode": "goal-flow",
+    "risk_level": "medium",
+    "task_type": "feature",
+    "visual_design": false
+  },
+  "last_stop_fingerprint": null,
+  "last_verified_commit": null,
+  "next_action": "\u5b9e\u73b0\u9694\u79bb\u5224\u5b9a\u7b56\u7565\u5e76\u8865\u9f50\u8fb9\u754c\u6d4b\u8bd5",
+  "no_progress_count": 0,
+  "profile": "standard",
+  "requirements": {
+    "REQ-001": {
+      "basis": [
+        "\u7528\u6237\u660e\u786e\u8981\u6c42\u51cf\u5c11\u65e0\u5fc5\u8981\u5206\u652f\u5207\u6362\uff0c\u540c\u65f6\u4fdd\u7559\u9ad8\u98ce\u9669\u9694\u79bb\u3002"
+      ],
+      "evidence": null,
+      "failure_modes": [
+        "\u666e\u901a Goal Flow \u4e0d\u5e94\u5207\u6362\uff1b\u5df2\u5b58\u5728\u9694\u79bb\u5206\u652f\u3001detached HEAD \u548c\u663e\u5f0f\u8986\u76d6\u7ee7\u7eed\u6309\u65e2\u6709\u9519\u8bef/\u5ba1\u8ba1\u89c4\u5219\u5904\u7406\u3002"
+      ],
+      "git_sha": null,
+      "kind": "must",
+      "minimum_evidence_mode": "real",
+      "product_fingerprint": null,
+      "proves": "\u63a7\u5236\u5668\u6d4b\u8bd5\u8986\u76d6\u5206\u7c7b\u3001\u7ed1\u5b9a\u548c\u663e\u5f0f\u8986\u76d6\u3002",
+      "statement": "\u666e\u901a\u4efb\u52a1\u5728\u5f53\u524d\u5206\u652f\u6267\u884c\uff1b\u65b0\u9879\u76ee\u3001\u91cd\u5927\u7279\u6027\u3001\u8fc1\u79fb\u548c high/critical \u98ce\u9669\u624d\u4f7f\u7528\u9694\u79bb\u5206\u652f\u6216 worktree\u3002",
+      "status": "UNVERIFIED",
+      "updated_at": "2026-09-15T07:07:12Z",
+      "updated_at_ns": 1789456032871519000,
+      "verified_by": [
+        "CHK-ALL"
+      ]
+    }
+  },
+  "resolved_harness": "goal-flow",
+  "resume_status": null,
+  "risks": {},
+  "schema_version": 3,
+  "state_revision": 9,
+  "status": "EXECUTING",
+  "stop_repeat_count": 0,
+  "title": "\u8c03\u6574\u5206\u652f\u9694\u79bb\u9ed8\u8ba4\u7b56\u7565",
+  "updated_at": "2026-09-15T07:07:32Z",
+  "wait_reason": null,
+  "worktree_binding": null
+}
