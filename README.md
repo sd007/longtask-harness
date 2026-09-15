@@ -1,6 +1,6 @@
 # Goal Flow
 
-Goal Flow 是一个面向 Codex 的任务执行插件。它会先判断任务规模，再选择合适的工作方式，帮助 Codex 持续完成规划、实现、验证、恢复和交付，减少长任务中途停止、需求偏移或未经验证就宣称完成的问题。
+Goal Flow 是一个面向 Codex 的任务执行插件。它把一个需求放在同一条“分析设计 → 实现 → 验收”主流程中，并为三个阶段提供不同的上下文和门槛，减少需求偏移或未经验证就宣称完成的问题。
 
 ## 主要工具
 
@@ -20,6 +20,8 @@ Goal Flow 会按任务复杂度选择最小可用流程：
 - `strict`：安全、迁移、生产可靠性或不可逆操作等高风险任务。
 
 完整流程只保留三个核心 Gate：方案必须可信、执行不能漂移、交付必须有当前证据。每个检查声明 `mock`、`simulated` 或 `real` 证据等级、覆盖的需求、能证明与不能证明的范围；完整流程、strict 和行为变化任务还必须有一个覆盖用户主路径的目标级检查。
+
+当需求涉及跨组件架构、关键数据链路、前后端协作、公共接口或高代价决策时，可启用视觉设计。每个目标只增加一个多页 `architecture.drawio` 源文件和一个可在 Codex/浏览器中完整查看的 `architecture.html`；默认两页分别表达整体架构与关键数据流。Draw.io 源文件可直接编辑，审批后仍可移动、缩放或改色，但组件、文字、连线或页面语义变化会要求重新对齐方案。
 
 ## 安装
 
@@ -96,6 +98,7 @@ Goal Flow 会先展示决策检查。没有高影响未决项时，轻量任务�
 完整目标保存在目标仓库的 `.goal-flow/` 目录中，主要包括：
 
 - `goal.md`：目标、范围和验收标准；
+- `design/architecture.drawio` / `architecture.html`：按需创建的可编辑设计源与浏览器视图；
 - `state.json`：唯一当前事实源，保存状态、需求、检查和风险；
 - `evidence.md`：只追加审批、验证回执、拒收和最终验收；
 - `events.jsonl`：只记录关键状态转换和验证事件。
@@ -113,6 +116,6 @@ python3 goal-flow/skills/goal-flow/scripts/goalctl.py --root /path/to/project re
 - 插件未出现：重启 Codex、新建任务，并检查 `codex plugin list --json`；
 - Hook 未运行：在 Codex CLI 的 `/hooks` 中确认两个 Hook 已信任且未禁用；
 - 安装失败：先运行 `./install.sh --dry-run` 查看将执行的操作。
-- 旧目标报 schema 不兼容：先归档旧 `.goal-flow`，再重新初始化；v0.10 不会自动修改或删除 v1/v2 状态。
+- 旧目标报 schema 不兼容：先归档旧 `.goal-flow`，再重新初始化；v0.11 不会自动修改或删除 v1/v2 状态。
 
-更多内容见[安装说明](docs/installation.md)、[使用说明](docs/usage.md)和[设计说明](docs/design.md)。当前版本为 `0.10.0`（schema v3）。
+更多内容见[安装说明](docs/installation.md)、[使用说明](docs/usage.md)和[设计说明](docs/design.md)。当前版本为 `0.11.0`（schema v3）。

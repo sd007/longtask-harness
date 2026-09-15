@@ -1,5 +1,7 @@
 # Evidence and Delivery Protocol
 
+This is Phase 3 of the single Goal Flow. Its context is the approved contract, final diff and Git SHA, current receipts, counter-evidence, residual risk, and user-visible outcome. Reconstruct coverage independently instead of accepting the implementation phase's completion narrative.
+
 ## Evidence rule
 
 Every acceptance-criterion claim must identify:
@@ -62,3 +64,5 @@ Provide the conclusion under four headings: proved, partially proved, not proved
 - migration, deployment, rollback, and user acceptance steps when relevant
 
 Only the user can accept the delivery.
+
+Requested corrections that preserve the design return to implementation and require fresh evidence. A failed approved assumption, changed public behavior, or changed architecture returns to analysis/design and requires a new revision and approval.

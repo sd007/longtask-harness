@@ -2,6 +2,16 @@
 
 Complete the appropriate depth of this protocol before implementation. Full Goal Flow and strict tasks use the complete contract; lightweight Standard tasks use the reduced contract described below.
 
+This is Phase 1 of the single Goal Flow. Its output is a decision-ready contract, not implementation. Carry only the user outcome, repository/domain evidence, current or greenfield baseline, alternatives, decisions, risks, visual model when enabled, and acceptance criteria. Implementation history and delivery claims do not belong in this phase context.
+
+## Shape the requirement before designing
+
+Establish who experiences the outcome, the trigger, the observable result, the important data, the system boundary, non-goals, and the cost of failure. For an existing project, compare current state → proposed change → target state. For greenfield, define the smallest coherent v1 boundary and explicitly defer later capabilities.
+
+Use grillme-style questioning only after inspection and only for ambiguity that can materially change scope, architecture, public behavior, quality, risk, or authorization. Ask a small related wave, state the recommended default and consequence, incorporate the answer, and repeat only when a new high-impact ambiguity appears.
+
+Enable visual design when architecture or a critical data path is part of the decision. Follow [visual-design.md](visual-design.md); do not add diagrams to bounded local changes merely to satisfy process.
+
 ## Infer before asking
 
 Build the first complete proposal yourself:

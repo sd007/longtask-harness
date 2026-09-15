@@ -1,7 +1,7 @@
 {
   "name": "goal-flow",
-  "version": "0.10.0+codex.20260731120000",
-  "description": "Plan, execute, verify, and deliver long software tasks with evidence-backed gates.",
+  "version": "0.11.0+codex.20260915010000",
+  "description": "Align software requirements visually, then implement and accept them with evidence-backed gates.",
   "author": {
     "name": "Local developer"
   },
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Goal Flow",
-    "shortDescription": "Lean task harnesses with safe escalation",
-    "longDescription": "A lightweight Codex-native workflow that keeps micro and standard tasks lean, escalates high-risk work to explicit approvals and evidence-backed gates, and retains behavior traceability for meaningful changes.",
+    "shortDescription": "Visual alignment before reliable coding",
+    "longDescription": "A lightweight Codex-native workflow with distinct analysis/design, implementation, and acceptance contexts; optional editable Draw.io architecture and data-flow contracts; and evidence-backed gates for meaningful changes.",
     "developerName": "Local developer",
     "category": "Productivity",
     "brandColor": "#4F46E5",
@@ -18,11 +18,12 @@
     "logo": "./assets/goal-flow-icon.svg",
     "capabilities": [
       "Plan",
+      "Visual architecture",
       "Implement",
       "Verify",
       "Recover",
       "Interactive approval"
     ],
-    "defaultPrompt": "Use $goal-flow to classify this task, choose the smallest safe harness, plan, execute, verify, and deliver it reliably."
+    "defaultPrompt": "Use $goal-flow to understand and visually align this task when useful, then implement and verify it through the smallest safe three-phase flow."
   }
 }

@@ -644,6 +644,12 @@ Required check TEST: {check_command}
             *REQUIREMENT_EVIDENCE_ARGS,
         )
 
+    def complete_visual_design_for(self, goal_id: str) -> Path:
+        path = self.repo / ".goal-flow" / goal_id / "design" / "architecture.drawio"
+        source = path.read_text(encoding="utf-8").replace("TODO: ", "")
+        path.write_text(source, encoding="utf-8")
+        return path
+
     def register_dimensions(self) -> None:
         for dimension in DIMENSIONS:
             if dimension in {"functional", "negative-boundary", "documentation-deliverables"}:
@@ -882,6 +888,70 @@ Required check TEST: {check_command}
         ready = self.ctl("plan-check")
         self.assertEqual(ready["gate"], "READY_FOR_APPROVAL")
         self.assertEqual(ready["dimensions_assessed"], 4)
+
+    def test_visual_design_scaffold_is_editable_previewable_and_required(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        created = self.ctl(
+            "init", "--goal-id", "visual-goal", "--title", "Visual Goal",
+            "--goal", "Design and ship an understandable change", "--mode", "standard",
+            "--visual-design",
+        )
+        directory = self.repo / ".goal-flow" / "visual-goal" / "design"
+        self.assertTrue((directory / "architecture.drawio").exists())
+        self.assertTrue((directory / "architecture.html").exists())
+        self.assertTrue(created["state"]["harness"]["visual_design"])
+        self.assertEqual(self.ctl("status")["phase"], "analysis-design")
+        incomplete = self.ctl("design-check", expected=1)
+        self.assertTrue(any("placeholder" in reason for reason in incomplete["reasons"]))
+        self.complete_visual_design_for("visual-goal")
+        checked = self.ctl("design-check")
+        self.assertEqual(checked["pages"], ["Architecture", "Critical data flow"])
+        rendered = self.ctl("design-render")
+        self.assertEqual(Path(rendered["viewer"]).resolve(), (directory / "architecture.html").resolve())
+
+    def test_visual_design_semantics_are_frozen_but_layout_remains_editable(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "visual-contract", "--title", "Visual Contract",
+            "--goal", "Design and ship an understandable change", "--mode", "standard",
+            "--visual-design",
+        )
+        self.write_complete_goal_for("visual-contract")
+        drawing = self.complete_visual_design_for("visual-contract")
+        self.record_check(
+            "--goal-id", "visual-contract", "--id", "TEST", "--status", "PENDING",
+            "--required", "--command", "test -f feature.txt",
+        )
+        self.register_requirement_for("visual-contract")
+        self.ctl(
+            "record", "dimension", "--goal-id", "visual-contract", "--id", "functional",
+            "--status", "COVERED", "--rationale",
+            "functional is covered by the observable acceptance criterion",
+            "--requirement-id", "REQ-001",
+        )
+        self.assertEqual(self.ctl("plan-check", "--goal-id", "visual-contract")["gate"], "READY_FOR_APPROVAL")
+        auto = self.ctl(
+            "approve", "--goal-id", "visual-contract", "--auto-approved",
+            "--next-action", "Implement", expected=2,
+        )
+        self.assertIn("explicit user approval", auto["error"])
+        self.ctl(
+            "approve", "--goal-id", "visual-contract", "--user-approved",
+            "--next-action", "Implement",
+        )
+        self.assertEqual(self.ctl("summary", "--goal-id", "visual-contract", "--json")["phase"], "implementation")
+        self.ctl("update", "--goal-id", "visual-contract", "--status", "VERIFYING")
+        self.assertEqual(self.ctl("report", "--goal-id", "visual-contract", "--json")["phase"], "acceptance")
+        source = drawing.read_text(encoding="utf-8")
+        drawing.write_text(source.replace("fillColor=#E0F2FE", "fillColor=#DBEAFE", 1), encoding="utf-8")
+        self.assertFalse(self.ctl("status", "--goal-id", "visual-contract")["design_drift"])
+        drawing.write_text(
+            drawing.read_text(encoding="utf-8").replace("current system / starting point", "current runtime", 1),
+            encoding="utf-8",
+        )
+        self.assertTrue(self.ctl("status", "--goal-id", "visual-contract")["design_drift"])
+        self.ctl("replan", "--goal-id", "visual-contract", "--reason", "Architecture semantics changed")
+        self.assertEqual(self.ctl("summary", "--goal-id", "visual-contract", "--json")["phase"], "analysis-design")
 
     def test_plan_check_rejects_machine_only_acceptance_details(self) -> None:
         self.prepare_plan()

@@ -1,5 +1,7 @@
 # Autonomous Execution Protocol
 
+This is Phase 2 of the single Goal Flow. Start from the approved outcome, accepted diagram semantics when present, relevant code/tests, current milestone, and fresh targeted outputs. Do not reinterpret discarded design alternatives as requirements.
+
 ## Epoch rule
 
 Make each epoch answer one question: what is the largest unsatisfied approved acceptance criterion that can be closed and verified now?
@@ -34,6 +36,8 @@ At the start and end of every epoch compare the diff with the approved `goal.md`
 Trace every implementation change to one or more approved acceptance criteria. Work that satisfies none is out of scope unless it is a necessary enabler recorded in the milestone.
 
 Replan when changing the core outcome, scope, architecture, public contract, quality threshold, risk, or authorization boundary. Local implementation choices that preserve those constraints do not require user interruption.
+
+An implementation defect stays in this phase. Evidence that an approved assumption or architecture is wrong returns the whole flow to analysis/design through `replan`; update the diagram and contract and obtain approval again. Draw.io geometry and styling are presentation-only, while changed nodes, labels, connections, pages, or semantic metadata are contract changes.
 
 Do not make progress by deleting requirements, weakening tests, adding skips, replacing real integration with mocks, or hiding counter-evidence.
 

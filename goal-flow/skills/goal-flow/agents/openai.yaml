@@ -1,4 +1,4 @@
 interface:
   display_name: "Goal Flow"
-  short_description: "Keep ordinary tasks lean and escalate safely"
-  default_prompt: "Use $goal-flow to choose the smallest safe harness, plan, execute, verify, and escalate only when needed."
+  short_description: "Align visually, implement, and verify lightly"
+  default_prompt: "Use $goal-flow to understand and visually align this task when useful, then implement and verify it through the smallest safe three-phase flow."

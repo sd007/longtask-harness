@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import fcntl
 import hashlib
+import html
 import json
 import os
 import platform
@@ -15,6 +17,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
+import xml.etree.ElementTree as ET
+import zlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +69,12 @@ PLACEHOLDER_MARKERS = {
     "define during planning",
     "pending user discussion and approval",
     "repository and domain context to be investigated",
+}
+VISUAL_PLACEHOLDER_MARKERS = {
+    "todo",
+    "待补充",
+    "replace with",
+    "describe the",
 }
 WAIT_STATUSES = {
     "PLANNING",
@@ -300,6 +311,230 @@ def goal_dir(root: Path, goal_id: str) -> Path:
     return goal_store(root) / goal_id
 
 
+def phase_for_state(state: dict[str, Any]) -> str:
+    """Return the user-facing phase without duplicating it in persisted state."""
+    status = state.get("status")
+    if not state.get("approved") or status in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
+        return "analysis-design"
+    if status in {"VERIFYING", "READY_FOR_ACCEPTANCE", "ACCEPTED"}:
+        return "acceptance"
+    resume_status = state.get("resume_status") if status == "PAUSED" else None
+    if resume_status in {"VERIFYING", "READY_FOR_ACCEPTANCE"}:
+        return "acceptance"
+    return "implementation"
+
+
+def visual_design_enabled(state: dict[str, Any]) -> bool:
+    return bool((state.get("harness") or {}).get("visual_design"))
+
+
+def visual_design_dir(directory: Path) -> Path:
+    return directory / "design"
+
+
+def visual_design_path(directory: Path) -> Path:
+    return visual_design_dir(directory) / "architecture.drawio"
+
+
+def visual_viewer_path(directory: Path) -> Path:
+    return visual_design_dir(directory) / "architecture.html"
+
+
+def visual_design_scaffold(title: str) -> str:
+    safe_title = html.escape(title, quote=True)
+    return f'''<mxfile host="Codex" modified="{now()}" agent="goal-flow" version="24.7.17" compressed="false">
+  <diagram id="architecture" name="Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="arch-title" value="{safe_title} — Architecture" style="text;html=1;fontSize=24;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="30" width="700" height="40" as="geometry" /></mxCell>
+        <mxCell id="arch-current" value="TODO: current system / starting point" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;" vertex="1" parent="1"><mxGeometry x="70" y="150" width="250" height="110" as="geometry" /></mxCell>
+        <mxCell id="arch-change" value="TODO: proposed change" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1"><mxGeometry x="450" y="150" width="250" height="110" as="geometry" /></mxCell>
+        <mxCell id="arch-target" value="TODO: target system / resulting capability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;" vertex="1" parent="1"><mxGeometry x="830" y="150" width="250" height="110" as="geometry" /></mxCell>
+        <mxCell id="arch-edge-1" value="change boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="arch-current" target="arch-change"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="arch-edge-2" value="produces" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="arch-change" target="arch-target"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="arch-note" value="TODO: key decisions, constraints, and out-of-scope boundaries" style="shape=note;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#64748B;" vertex="1" parent="1"><mxGeometry x="330" y="350" width="500" height="150" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="critical-flow" name="Critical data flow">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="f0" />
+        <mxCell id="f1" parent="f0" />
+        <mxCell id="flow-title" value="{safe_title} — Critical data flow" style="text;html=1;fontSize=24;fontStyle=1;" vertex="1" parent="f1"><mxGeometry x="40" y="30" width="700" height="40" as="geometry" /></mxCell>
+        <mxCell id="flow-entry" value="TODO: trigger / input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;" vertex="1" parent="f1"><mxGeometry x="70" y="170" width="220" height="100" as="geometry" /></mxCell>
+        <mxCell id="flow-process" value="TODO: processing and validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="f1"><mxGeometry x="430" y="170" width="260" height="100" as="geometry" /></mxCell>
+        <mxCell id="flow-result" value="TODO: persistence / response / side effect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;" vertex="1" parent="f1"><mxGeometry x="850" y="170" width="240" height="100" as="geometry" /></mxCell>
+        <mxCell id="flow-edge-1" value="TODO: data and contract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="f1" source="flow-entry" target="flow-process"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="flow-edge-2" value="TODO: data and outcome" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="f1" source="flow-process" target="flow-result"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="flow-failure" value="TODO: failure, retry, or rollback path" style="shape=note;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;" vertex="1" parent="f1"><mxGeometry x="430" y="380" width="360" height="130" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+'''
+
+
+def diagram_model(diagram: ET.Element) -> ET.Element:
+    model = diagram.find("mxGraphModel")
+    if model is not None:
+        return model
+    encoded = (diagram.text or "").strip()
+    if not encoded:
+        raise GoalFlowError(f"Draw.io page {diagram.get('name') or diagram.get('id')} has no model")
+    try:
+        raw = base64.b64decode(encoded)
+        xml_text = urllib.parse.unquote(zlib.decompress(raw, -15).decode("utf-8"))
+        return ET.fromstring(xml_text)
+    except (ValueError, zlib.error, ET.ParseError) as exc:
+        raise GoalFlowError(f"Cannot decode Draw.io page {diagram.get('name') or diagram.get('id')}: {exc}") from exc
+
+
+def normalize_diagram_value(value: str | None) -> str:
+    plain = re.sub(r"<[^>]+>", " ", html.unescape(value or ""))
+    return " ".join(plain.split())
+
+
+def visual_design_model(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise GoalFlowError(f"Missing visual design: {path}")
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as exc:
+        raise GoalFlowError(f"Invalid Draw.io XML in {path}: {exc}") from exc
+    if root.tag != "mxfile":
+        raise GoalFlowError("architecture.drawio must contain an mxfile root")
+    pages: list[dict[str, Any]] = []
+    for page_index, diagram in enumerate(root.findall("diagram")):
+        model = diagram_model(diagram)
+        cells: list[dict[str, Any]] = []
+        wrappers: dict[str, ET.Element] = {}
+        for wrapper in [*model.findall(".//object"), *model.findall(".//UserObject")]:
+            wrapped_cell = wrapper.find("mxCell")
+            if wrapped_cell is not None and wrapped_cell.get("id"):
+                wrappers[str(wrapped_cell.get("id"))] = wrapper
+        for cell in model.findall(".//mxCell"):
+            if not (cell.get("vertex") == "1" or cell.get("edge") == "1"):
+                continue
+            wrapper = wrappers.get(str(cell.get("id") or ""))
+            display_value = cell.get("value")
+            if wrapper is not None:
+                display_value = wrapper.get("label") or wrapper.get("value") or display_value
+            semantic = {
+                "id": cell.get("id"),
+                "value": normalize_diagram_value(display_value),
+                "vertex": cell.get("vertex") == "1",
+                "edge": cell.get("edge") == "1",
+                "source": cell.get("source"),
+                "target": cell.get("target"),
+                "parent": cell.get("parent"),
+            }
+            custom = {
+                key: value for key, value in cell.attrib.items()
+                if key.startswith("data-")
+            }
+            if wrapper is not None:
+                custom.update({
+                    key: value for key, value in wrapper.attrib.items()
+                    if key.startswith("data-")
+                })
+            if custom:
+                semantic["metadata"] = custom
+            cells.append(semantic)
+        pages.append({
+            "index": page_index,
+            "name": diagram.get("name") or f"Page {page_index + 1}",
+            "cells": sorted(cells, key=lambda item: str(item.get("id") or "")),
+        })
+    if not pages:
+        raise GoalFlowError("architecture.drawio must contain at least one page")
+    return {"pages": pages}
+
+
+def visual_design_semantic_hash(path: Path) -> str:
+    raw = json.dumps(visual_design_model(path), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def visual_design_check(directory: Path) -> dict[str, Any]:
+    path = visual_design_path(directory)
+    try:
+        model = visual_design_model(path)
+    except GoalFlowError as exc:
+        return {"ok": False, "reasons": [str(exc)], "path": str(path), "pages": []}
+    reasons: list[str] = []
+    page_names = {page["name"].strip().lower() for page in model["pages"]}
+    for required in ("architecture", "critical data flow"):
+        if required not in page_names:
+            reasons.append(f"architecture.drawio needs a '{required}' page")
+    for page in model["pages"]:
+        vertices = [cell for cell in page["cells"] if cell["vertex"]]
+        edges = [cell for cell in page["cells"] if cell["edge"]]
+        if len(vertices) < 3:
+            reasons.append(f"Draw.io page {page['name']} needs at least three semantic nodes")
+        if page["name"].strip().lower() == "critical data flow" and len(edges) < 2:
+            reasons.append("Critical data flow needs at least two connected steps")
+        for cell in page["cells"]:
+            lowered = cell["value"].lower()
+            if any(marker in lowered for marker in VISUAL_PLACEHOLDER_MARKERS):
+                reasons.append(f"Draw.io page {page['name']} still contains placeholder: {cell['value']}")
+    return {
+        "ok": not reasons,
+        "reasons": reasons,
+        "path": str(path),
+        "viewer": str(visual_viewer_path(directory)),
+        "pages": [page["name"] for page in model["pages"]],
+        "semantic_hash": visual_design_semantic_hash(path),
+    }
+
+
+def render_visual_viewer(directory: Path, title: str) -> Path:
+    source = visual_design_path(directory)
+    if not source.exists():
+        raise GoalFlowError(f"Missing visual design: {source}")
+    xml = source.read_text(encoding="utf-8")
+    config = json.dumps({
+        "highlight": "#0000ff",
+        "nav": True,
+        "resize": True,
+        "toolbar": "zoom layers lightbox",
+        "xml": xml,
+    }, ensure_ascii=False, separators=(",", ":"))
+    document = f'''<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)} — Architecture</title>
+  <style>
+    html, body {{ height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: #f8fafc; color: #0f172a; }}
+    header {{ height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #fff; border-bottom: 1px solid #e2e8f0; }}
+    main {{ height: calc(100% - 49px); }}
+    .mxgraph {{ width: 100%; height: 100%; border: 0; }}
+    a {{ color: #4f46e5; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <header><strong>{html.escape(title)}</strong><a href="architecture.drawio">下载 / 用 Draw.io 编辑源文件</a></header>
+  <main><div class="mxgraph" data-mxgraph="{html.escape(config, quote=True)}"></div></main>
+  <script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
+</body>
+</html>
+'''
+    output = visual_viewer_path(directory)
+    output.write_text(document, encoding="utf-8")
+    return output
+
+
+def initialize_visual_design(directory: Path, title: str) -> None:
+    design_dir = visual_design_dir(directory)
+    design_dir.mkdir(parents=True, exist_ok=True)
+    visual_design_path(directory).write_text(visual_design_scaffold(title), encoding="utf-8")
+    render_visual_viewer(directory, title)
+
+
 def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict[str, Any]]:
     goal_id = active_goal_id(root, explicit)
     if not goal_id:
@@ -322,7 +557,9 @@ def load_state(root: Path, explicit: str | None = None) -> tuple[str, Path, dict
         "risk_level": "unspecified",
         "behavior_change": False,
         "evidence_level": "strict",
+        "visual_design": False,
     })
+    state["harness"].setdefault("visual_design", False)
     state.setdefault("state_revision", 0)
     state.setdefault("contract_version", 1)
     state.setdefault("resolved_harness", resolve_harness(state))
@@ -434,6 +671,7 @@ def standard_auto_completion_allowed(state: dict[str, Any]) -> bool:
     return (
         is_lightweight_standard(state)
         and not state.get("harness", {}).get("behavior_change")
+        and not visual_design_enabled(state)
         and state.get("harness", {}).get("risk_level") in {"unspecified", "low"}
     )
 
@@ -443,7 +681,7 @@ def compact_harness(state: dict[str, Any]) -> dict[str, Any]:
     harness = state.get("harness", {})
     result = {
         key: harness.get(key)
-        for key in ("mode", "task_type", "risk_level", "behavior_change")
+        for key in ("mode", "task_type", "risk_level", "behavior_change", "visual_design")
         if key in harness
     }
     result["resolved_harness"] = state.get("resolved_harness") or resolve_harness(state)
@@ -1153,6 +1391,11 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
 
     decision_check = decision_check_from_goal(goal_text, state)
 
+    visual_check = None
+    if visual_design_enabled(state):
+        visual_check = visual_design_check(directory)
+        reasons.extend(f"Visual design: {reason}" for reason in visual_check["reasons"])
+
     requirements = state.get("requirements", {})
     must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
     if not must:
@@ -1182,6 +1425,7 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
     needs_goal_check = (
         resolve_harness(state) in {"goal-flow", "strict"}
         or bool(state.get("harness", {}).get("behavior_change"))
+        or visual_design_enabled(state)
     )
     valid_goal_checks = [
         check for check in required_checks.values()
@@ -1306,6 +1550,7 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
         "dimensions_total": len(required_dimensions),
         "harness": compact_harness(state),
         "decision_check": decision_check,
+        "visual_design": visual_check,
     }
 
 
@@ -1349,13 +1594,24 @@ def design_hash(directory: Path, state: dict[str, Any]) -> str:
         # tasks.md is intentionally a living checklist; changing it alone must
         # not invalidate the approved outcome. Delta and goal remain frozen.
         paths.append(directory / "delta.md")
-    if len(paths) == 1:
+    visual_digest = None
+    if visual_design_enabled(state):
+        drawing = visual_design_path(directory)
+        try:
+            visual_digest = visual_design_semantic_hash(drawing)
+        except GoalFlowError:
+            visual_digest = "INVALID:" + (file_hash(drawing) if drawing.exists() else "MISSING")
+    if len(paths) == 1 and visual_digest is None:
         return file_hash(paths[0]) if paths[0].exists() else ""
     digest = hashlib.sha256()
     for path in paths:
         digest.update(str(path.name).encode("utf-8"))
         digest.update(b"\0")
         digest.update(file_hash(path).encode("ascii") if path.exists() else b"MISSING")
+        digest.update(b"\0")
+    if visual_digest is not None:
+        digest.update(b"architecture.drawio\0")
+        digest.update(visual_digest.encode("ascii"))
         digest.update(b"\0")
     return digest.hexdigest()
 
@@ -1638,6 +1894,15 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         1,
     )
     goal_text = goal_text.replace(f"- Profile: {args.profile}.", f"- Profile: {profile}.", 1)
+    if args.visual_design:
+        goal_text = goal_text.replace(
+            "## Approved design\n\nPending user discussion and approval.",
+            "## Approved design\n\n"
+            "Pending user discussion and approval. The semantic content in "
+            "`design/architecture.drawio` is part of this contract; "
+            "`design/architecture.html` is its generated viewer.",
+            1,
+        )
     (directory / "goal.md").write_text(goal_text, encoding="utf-8")
     (directory / "evidence.md").write_text(f"# Evidence — {args.title}\n", encoding="utf-8")
     if behavior_change:
@@ -1685,6 +1950,7 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
             "task_type": args.task_type,
             "risk_level": args.risk_level,
             "behavior_change": behavior_change,
+            "visual_design": bool(args.visual_design),
             "baseline_product_fingerprint": baseline_product_fingerprint,
             "classification_reasons": classification["reasons"],
         },
@@ -1721,6 +1987,8 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
         "created_at": now(),
         "updated_at": now(),
     }
+    if args.visual_design:
+        initialize_visual_design(directory, args.title)
     save_state(directory, state)
     atomic_json_write(active_file(root), {"goal_id": goal_id, "updated_at": now()})
     return {"ok": True, "message": f"Initialized goal {goal_id}", "goal_dir": str(directory), "state": state}
@@ -1750,6 +2018,7 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "stored_status": state.get("status"),
         "effective_status": effective_status(root, state),
         "status": effective_status(root, state),
+        "phase": phase_for_state(state),
         "gate": gate.get("gate"),
         "freshness": freshness,
         "invalidated_paths": freshness["invalidated_paths"],
@@ -1758,6 +2027,32 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if not state.get("approved"):
         payload["plan"] = plan_readiness(directory, state)
     return payload
+
+
+def cmd_design_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if not visual_design_enabled(state):
+        raise GoalFlowError("This goal was not initialized with --visual-design")
+    result = visual_design_check(directory)
+    return {
+        **result,
+        "phase": phase_for_state(state),
+        "message": "Visual design is ready" if result["ok"] else "Visual design needs revision",
+    }
+
+
+def cmd_design_render(args: argparse.Namespace, root: Path) -> dict[str, Any]:
+    _, directory, state = load_state(root, args.goal_id)
+    if not visual_design_enabled(state):
+        raise GoalFlowError("This goal was not initialized with --visual-design")
+    output = render_visual_viewer(directory, state.get("title") or state["goal_id"])
+    return {
+        "ok": True,
+        "message": "Visual design viewer regenerated",
+        "source": str(visual_design_path(directory)),
+        "viewer": str(output),
+        "phase": phase_for_state(state),
+    }
 
 
 def cmd_goals(args: argparse.Namespace, root: Path) -> dict[str, Any]:
@@ -1905,6 +2200,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         "status": effective_status(root, state),
         "stored_status": state.get("status"),
         "effective_status": effective_status(root, state),
+        "phase": phase_for_state(state),
         "gate": gate.get("gate"),
         "freshness": freshness,
         "invalidated_paths": freshness["invalidated_paths"],
@@ -1922,6 +2218,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         f"Harness: {payload['harness'].get('mode', 'goal-flow')}"
         + (" (behavior change)" if payload['harness'].get("behavior_change") else ""),
         f"Status: {payload['status']} (stored: {payload['stored_status']})",
+        f"Phase: {payload['phase']}",
         f"Gate: {payload['gate']}",
         f"Progress: {payload['must_verified']}/{payload['must_total']} MUST verified",
         f"Milestone: {payload['milestone'] or '-'}",
@@ -2046,6 +2343,7 @@ def build_report(
         "status": effective_status(root, state),
         "stored_status": state.get("status"),
         "effective_status": effective_status(root, state),
+        "phase": phase_for_state(state),
         "gate": evaluate_gate(root, directory, state).get("gate"),
         "freshness": freshness,
         "invalidated_paths": freshness["invalidated_paths"],
@@ -2073,6 +2371,7 @@ def build_report(
         f"- Goal: {goal_id}",
         f"- Profile: {payload['profile']}",
         f"- Status: {payload['status']} (stored: {payload['stored_status']})",
+        f"- Phase: {payload['phase']}",
         f"- Gate: {payload['gate']}",
         f"- Git: {sha}",
         f"- Milestone: {payload['milestone'] or '-'}",
@@ -2238,6 +2537,8 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         (directory / "goal.md").read_text(encoding="utf-8"), state
     )
     if auto_approved:
+        if visual_design_enabled(state):
+            raise GoalFlowError("Visual design goals require explicit user approval")
         if resolve_harness(state) != "standard":
             raise GoalFlowError("Automatic approval is only available for the standard Harness")
         if state.get("profile") == "strict" or state.get("harness", {}).get("risk_level") in {"high", "critical"}:
@@ -2915,6 +3216,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--profile", choices=sorted(PROFILES), default="standard")
     init.add_argument("--mode", choices=sorted(HARNESS_MODES), default="auto")
     init.add_argument("--behavior-change", action="store_true")
+    init.add_argument(
+        "--visual-design",
+        action="store_true",
+        help="create an editable Draw.io architecture and critical-data-flow contract",
+    )
     init.add_argument("--task-type", choices=sorted(TASK_TYPES), default="unspecified")
     init.add_argument("--risk-level", choices=sorted(RISK_LEVELS), default="unspecified")
     init.add_argument("--files", type=int, default=1)
@@ -2930,6 +3236,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status")
     status.add_argument("--goal-id")
+
+    design_check = sub.add_parser("design-check")
+    design_check.add_argument("--goal-id")
+
+    design_render = sub.add_parser("design-render")
+    design_render.add_argument("--goal-id")
 
     summary = sub.add_parser("summary")
     summary.add_argument("--goal-id")
@@ -3062,6 +3374,8 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "init": cmd_init,
     "status": cmd_status,
+    "design-check": cmd_design_check,
+    "design-render": cmd_design_render,
     "goals": cmd_goals,
     "summary": cmd_summary,
     "report": cmd_report,
@@ -3090,7 +3404,9 @@ def main() -> int:
     args = parser.parse_args()
     root = find_root(args.root)
     try:
-        read_only = args.command in {"status", "goals", "summary", "report", "plan-check", "review", "classify"}
+        read_only = args.command in {
+            "status", "goals", "summary", "report", "plan-check", "review", "classify", "design-check"
+        }
         if args.command == "context":
             read_only = not args.init
         if args.command == "gate":
