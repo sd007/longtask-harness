@@ -2,3 +2,4 @@
 {"event":"approve","git_sha":"c6ddd7fd7bda7c41c7bfc2520ab527b49a61b851","milestone":"M1","revision":10,"status":"EXECUTING","time":"2026-09-15T06:42:19Z"}
 {"check":"CHK-ALL","duration_ms":74000,"event":"verify","git_sha":"93d1545543eff9b9e879fa47d1e0811a6de65ce7","milestone":"M1","result":"PASS","revision":13,"status":"EXECUTING","time":"2026-09-15T06:56:40Z"}
 {"event":"gate","git_sha":"93d1545543eff9b9e879fa47d1e0811a6de65ce7","milestone":"M1","result":"READY_FOR_REVIEW","revision":17,"status":"READY_FOR_ACCEPTANCE","time":"2026-09-15T06:57:18Z"}
+{"event":"accept","git_sha":"9fed40383277fcbe6ee65539eb666d37ec06056b","milestone":"M1","revision":18,"status":"ACCEPTED","time":"2026-09-15T07:04:03Z"}
