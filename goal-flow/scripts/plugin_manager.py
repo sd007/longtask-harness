@@ -227,6 +227,7 @@ def install(args: argparse.Namespace) -> int:
 
     old_marketplace = marketplace_path.read_bytes() if marketplace_path.exists() else None
     backup: Path | None = None
+    replaced = False
     staging_parent = destination.parent
     staging_parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".goal-flow-install-", dir=staging_parent)) / PLUGIN_NAME
@@ -235,10 +236,11 @@ def install(args: argparse.Namespace) -> int:
             copy_plugin(PLUGIN_ROOT, staging)
             add_cachebuster(staging)
             if destination.exists():
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
                 backup = destination.with_name(f"{PLUGIN_NAME}.backup-{stamp}")
                 destination.replace(backup)
             staging.replace(destination)
+            replaced = True
         validate_mcp_server(destination)
         atomic_write_json(marketplace_path, marketplace)
         if not args.no_codex:
@@ -248,7 +250,7 @@ def install(args: argparse.Namespace) -> int:
         if backup and backup.exists():
             shutil.rmtree(backup)
     except Exception:
-        if not same_source and destination.exists():
+        if not same_source and replaced and destination.exists():
             shutil.rmtree(destination)
         if backup and backup.exists():
             backup.replace(destination)

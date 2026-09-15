@@ -98,6 +98,17 @@ EDITABLE_STATUSES = {
     "WAITING_AUTHORIZATION",
     "BLOCKED",
 }
+STATUS_TRANSITIONS = {
+    "PLANNING": {"WAITING_PLAN_APPROVAL", "WAITING_INPUT", "PAUSED", "BLOCKED", "CANCELLED"},
+    "WAITING_PLAN_APPROVAL": {"PLANNING", "EXECUTING", "WAITING_INPUT", "PAUSED", "BLOCKED", "CANCELLED"},
+    "EXECUTING": {"VERIFYING", "READY_FOR_ACCEPTANCE", "WAITING_INPUT", "WAITING_AUTHORIZATION", "PAUSED", "BLOCKED", "CANCELLED"},
+    "VERIFYING": {"EXECUTING", "READY_FOR_ACCEPTANCE", "WAITING_INPUT", "WAITING_AUTHORIZATION", "PAUSED", "BLOCKED", "CANCELLED"},
+    "READY_FOR_ACCEPTANCE": {"VERIFYING", "EXECUTING", "PAUSED", "BLOCKED", "CANCELLED", "ACCEPTED"},
+    "WAITING_INPUT": {"PLANNING", "EXECUTING", "VERIFYING", "PAUSED", "BLOCKED", "CANCELLED"},
+    "WAITING_AUTHORIZATION": {"EXECUTING", "VERIFYING", "PAUSED", "BLOCKED", "CANCELLED"},
+    "BLOCKED": {"PLANNING", "EXECUTING", "VERIFYING", "PAUSED", "CANCELLED"},
+    "PAUSED": {"PLANNING", "EXECUTING", "VERIFYING", "READY_FOR_ACCEPTANCE", "WAITING_INPUT", "WAITING_AUTHORIZATION", "BLOCKED", "CANCELLED"},
+}
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 LOCKFILE_NAMES = (
     "Cargo.lock", "Gemfile.lock", "Package.resolved", "composer.lock",
@@ -112,6 +123,13 @@ EVENT_FIELDS = {
 
 class GoalFlowError(RuntimeError):
     pass
+
+
+def ensure_status_transition(current: str, target: str) -> None:
+    if current == target:
+        return
+    if target not in STATUS_TRANSITIONS.get(current, set()):
+        raise GoalFlowError(f"Invalid Goal Flow status transition: {current} -> {target}")
 
 
 def now() -> str:
@@ -227,7 +245,7 @@ def classify_harness(
     behavior_change: bool = False,
     cross_session: bool = False,
     autonomous: bool = False,
-    default_mode: str = "standard",
+    default_mode: str = "auto",
 ) -> dict[str, Any]:
     """Choose the smallest harness that covers the task's observable risk."""
     if files < 1 or steps < 1:
@@ -237,6 +255,40 @@ def classify_harness(
     if risk_level not in RISK_LEVELS:
         raise GoalFlowError(f"invalid risk level: {risk_level}")
     reasons: list[str] = []
+    # An explicitly requested harness is a user constraint, not a hint for
+    # auto-classification.  Only ``auto`` may be reduced or upgraded from the
+    # task characteristics below.
+    explicit_mode = default_mode if default_mode in {"micro", "standard", "goal-flow", "strict"} else None
+    if explicit_mode is not None:
+        mode = "goal-flow" if explicit_mode == "strict" else explicit_mode
+        profile = "strict" if explicit_mode == "strict" else "standard"
+        reasons.append("using the explicitly requested harness")
+        if (risk_level in {"high", "critical"} or task_type == "migration") and profile != "strict":
+            mode = "goal-flow"
+            profile = "strict"
+            reasons.append("safety floor upgraded the requested harness for high-impact risk or migration")
+        resolved = "strict" if profile == "strict" else "goal-flow" if mode == "goal-flow" else mode
+        return {
+            "mode": mode,
+            "profile": profile,
+            "resolved_harness": resolved,
+            "task_type": task_type,
+            "risk_level": risk_level,
+            "behavior_change": bool(behavior_change),
+            "inputs": {
+                "files": files,
+                "steps": steps,
+                "cross_session": bool(cross_session),
+                "autonomous": bool(autonomous),
+            },
+            "reasons": reasons,
+            "harness": {
+                "plan": "lightweight" if mode in {"micro", "standard"} else "structured",
+                "approval": "required" if mode == "goal-flow" else "conditional",
+                "evidence": "strict" if profile == "strict" else "standard",
+                "resume": mode == "goal-flow",
+            },
+        }
     strict_risk = risk_level in {"high", "critical"} or task_type == "migration"
     if strict_risk:
         mode = "goal-flow"
@@ -255,9 +307,9 @@ def classify_harness(
         profile = "strict" if default_mode == "strict" else "standard"
         reasons.append("small, bounded task fits the smallest requested harness")
     else:
-        mode = "standard"
+        mode = "micro"
         profile = "standard"
-        reasons.append("defaulting to a lightweight structured plan")
+        reasons.append("small, bounded task fits the smallest harness")
     resolved = "strict" if profile == "strict" else "goal-flow" if mode == "goal-flow" else mode
     return {
         "mode": mode,
@@ -348,13 +400,13 @@ def visual_design_scaffold(title: str) -> str:
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="arch-title" value="{safe_title} — Architecture" style="text;html=1;fontSize=24;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="40" y="30" width="700" height="40" as="geometry" /></mxCell>
-        <mxCell id="arch-current" value="TODO: current system / starting point" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;" vertex="1" parent="1"><mxGeometry x="70" y="150" width="250" height="110" as="geometry" /></mxCell>
-        <mxCell id="arch-change" value="TODO: proposed change" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1"><mxGeometry x="450" y="150" width="250" height="110" as="geometry" /></mxCell>
-        <mxCell id="arch-target" value="TODO: target system / resulting capability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;" vertex="1" parent="1"><mxGeometry x="830" y="150" width="250" height="110" as="geometry" /></mxCell>
-        <mxCell id="arch-edge-1" value="change boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="arch-current" target="arch-change"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="arch-edge-2" value="produces" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="arch-change" target="arch-target"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="arch-note" value="TODO: key decisions, constraints, and out-of-scope boundaries" style="shape=note;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#64748B;" vertex="1" parent="1"><mxGeometry x="330" y="350" width="500" height="150" as="geometry" /></mxCell>
+        <mxCell id="arch-title" value="{safe_title} — Architecture" style="text;html=1;fontSize=24;fontStyle=1;" vertex="1" parent="1" data-kind="title" />
+        <mxCell id="arch-current" value="TODO: current system / starting point" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;" vertex="1" parent="1" data-kind="component" data-description="TODO: current responsibility and repository location" data-requirements="REQ-001" data-status="existing"><mxGeometry x="70" y="150" width="250" height="110" as="geometry" /></mxCell>
+        <mxCell id="arch-change" value="TODO: proposed change" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1" data-kind="component" data-description="TODO: new responsibility and implementation boundary" data-requirements="REQ-001" data-status="changed"><mxGeometry x="450" y="150" width="250" height="110" as="geometry" /></mxCell>
+        <mxCell id="arch-target" value="TODO: target system / resulting capability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;" vertex="1" parent="1" data-kind="component" data-description="TODO: target capability and ownership" data-requirements="REQ-001" data-status="target"><mxGeometry x="830" y="150" width="250" height="110" as="geometry" /></mxCell>
+        <mxCell id="arch-edge-1" value="change boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="arch-current" target="arch-change" data-kind="boundary" data-description="Existing to proposed boundary" data-requirements="REQ-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="arch-edge-2" value="produces" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="arch-change" target="arch-target" data-kind="boundary" data-description="Proposed change to target capability" data-requirements="REQ-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="arch-note" value="TODO: key decisions, constraints, and out-of-scope boundaries" style="shape=note;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#64748B;" vertex="1" parent="1" data-kind="decision" data-description="TODO: decisions, constraints, and deferred scope" data-requirements="REQ-001"><mxGeometry x="330" y="350" width="500" height="150" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
@@ -363,13 +415,15 @@ def visual_design_scaffold(title: str) -> str:
       <root>
         <mxCell id="f0" />
         <mxCell id="f1" parent="f0" />
-        <mxCell id="flow-title" value="{safe_title} — Critical data flow" style="text;html=1;fontSize=24;fontStyle=1;" vertex="1" parent="f1"><mxGeometry x="40" y="30" width="700" height="40" as="geometry" /></mxCell>
-        <mxCell id="flow-entry" value="TODO: trigger / input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;" vertex="1" parent="f1"><mxGeometry x="70" y="170" width="220" height="100" as="geometry" /></mxCell>
-        <mxCell id="flow-process" value="TODO: processing and validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="f1"><mxGeometry x="430" y="170" width="260" height="100" as="geometry" /></mxCell>
-        <mxCell id="flow-result" value="TODO: persistence / response / side effect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;" vertex="1" parent="f1"><mxGeometry x="850" y="170" width="240" height="100" as="geometry" /></mxCell>
-        <mxCell id="flow-edge-1" value="TODO: data and contract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="f1" source="flow-entry" target="flow-process"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="flow-edge-2" value="TODO: data and outcome" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="f1" source="flow-process" target="flow-result"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="flow-failure" value="TODO: failure, retry, or rollback path" style="shape=note;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;" vertex="1" parent="f1"><mxGeometry x="430" y="380" width="360" height="130" as="geometry" /></mxCell>
+        <mxCell id="flow-title" value="{safe_title} — Critical data flow" style="text;html=1;fontSize=24;fontStyle=1;" vertex="1" parent="f1" data-kind="title" />
+        <mxCell id="flow-entry" value="TODO: trigger / input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;" vertex="1" parent="f1" data-kind="entry" data-description="TODO: trigger, actor, and input source" data-requirements="REQ-001"><mxGeometry x="70" y="170" width="220" height="100" as="geometry" /></mxCell>
+        <mxCell id="flow-process" value="TODO: processing and validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="f1" data-kind="process" data-description="TODO: validation, authorization, transformation, and business rule" data-requirements="REQ-001"><mxGeometry x="430" y="170" width="260" height="100" as="geometry" /></mxCell>
+        <mxCell id="flow-result" value="TODO: persistence / response / side effect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;" vertex="1" parent="f1" data-kind="output" data-description="TODO: persisted result, response, and side effect" data-requirements="REQ-001"><mxGeometry x="850" y="170" width="240" height="100" as="geometry" /></mxCell>
+        <mxCell id="flow-edge-1" value="TODO: API-01 | request and validation contract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="f1" source="flow-entry" target="flow-process" data-kind="protocol" data-contract-id="API-01" data-description="TODO: input contract, auth, timeout, and validation" data-requirements="REQ-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="flow-edge-2" value="TODO: API-02 | response and persistence contract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="f1" source="flow-process" target="flow-result" data-kind="protocol" data-contract-id="API-02" data-description="TODO: output contract, consistency, and side effect" data-requirements="REQ-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="flow-failure" value="TODO: failure, retry, or rollback path" style="shape=note;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#DC2626;" vertex="1" parent="f1" data-kind="failure" data-description="TODO: failure modes, retry, idempotency, and rollback" data-requirements="REQ-001"><mxGeometry x="430" y="380" width="360" height="130" as="geometry" /></mxCell>
+        <mxCell id="flow-contract-1" value="TODO: API-01 | Request: input object with required fields | Fields: id type UUID required validation format meaning identity | Response: validation result | Errors: 400 / 401 | Auth: required | Timeout: 3s | Retry: none unless idempotent | Idempotency: request key" style="shape=note;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#64748B;" vertex="1" parent="f1" data-kind="contract" data-contract-id="API-01" data-description="Request and validation protocol details" data-requirements="REQ-001" data-protocol="http" data-method="POST" data-path="/v1/resource" data-request="InputRequest" data-fields="id|UUID|required|format|identity" data-response="ValidationResult" data-errors="400,401" data-auth="required" data-timeout-ms="3000" data-retry="none" data-idempotency="request-key"><mxGeometry x="70" y="560" width="500" height="135" as="geometry" /></mxCell>
+        <mxCell id="flow-contract-2" value="TODO: API-02 | Request: validated command | Fields: id type UUID required validation format meaning identity | Response: persisted result | Errors: 409 / 500 | Auth: service identity | Timeout: 5s | Retry: bounded | Idempotency: command key" style="shape=note;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#64748B;" vertex="1" parent="f1" data-kind="contract" data-contract-id="API-02" data-description="Persistence and response protocol details" data-requirements="REQ-001" data-protocol="internal" data-method="COMMAND" data-path="service://resource" data-request="ValidatedCommand" data-fields="id|UUID|required|format|identity" data-response="ResourceResult" data-errors="409,500" data-auth="service-identity" data-timeout-ms="5000" data-retry="bounded" data-idempotency="command-key"><mxGeometry x="600" y="560" width="500" height="135" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
@@ -397,6 +451,23 @@ def normalize_diagram_value(value: str | None) -> str:
     return " ".join(plain.split())
 
 
+SEMANTIC_STYLE_KEYS = {
+    "shape", "endArrow", "startArrow", "dashed", "dashPattern", "edgeStyle",
+    "curved", "orthogonalLoop", "container", "swimlane", "direction",
+}
+
+
+def semantic_style(style: str | None) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for item in (style or "").split(";"):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        if key in SEMANTIC_STYLE_KEYS:
+            values[key] = value
+    return values
+
+
 def visual_design_model(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise GoalFlowError(f"Missing visual design: {path}")
@@ -413,17 +484,23 @@ def visual_design_model(path: Path) -> dict[str, Any]:
         wrappers: dict[str, ET.Element] = {}
         for wrapper in [*model.findall(".//object"), *model.findall(".//UserObject")]:
             wrapped_cell = wrapper.find("mxCell")
-            if wrapped_cell is not None and wrapped_cell.get("id"):
-                wrappers[str(wrapped_cell.get("id"))] = wrapper
+            if wrapped_cell is not None:
+                wrapper_id = wrapper.get("id")
+                cell_id = wrapped_cell.get("id")
+                if wrapper_id:
+                    wrappers[str(wrapper_id)] = wrapper
+                if cell_id:
+                    wrappers[str(cell_id)] = wrapper
         for cell in model.findall(".//mxCell"):
             if not (cell.get("vertex") == "1" or cell.get("edge") == "1"):
                 continue
             wrapper = wrappers.get(str(cell.get("id") or ""))
+            cell_id = cell.get("id") or (wrapper.get("id") if wrapper is not None else None)
             display_value = cell.get("value")
             if wrapper is not None:
                 display_value = wrapper.get("label") or wrapper.get("value") or display_value
             semantic = {
-                "id": cell.get("id"),
+                "id": cell_id,
                 "value": normalize_diagram_value(display_value),
                 "vertex": cell.get("vertex") == "1",
                 "edge": cell.get("edge") == "1",
@@ -442,6 +519,9 @@ def visual_design_model(path: Path) -> dict[str, Any]:
                 })
             if custom:
                 semantic["metadata"] = custom
+            style = semantic_style(cell.get("style"))
+            if style:
+                semantic["style"] = style
             cells.append(semantic)
         pages.append({
             "index": page_index,
@@ -458,35 +538,189 @@ def visual_design_semantic_hash(path: Path) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def visual_design_check(directory: Path) -> dict[str, Any]:
+def visual_design_check(directory: Path, state: dict[str, Any] | None = None) -> dict[str, Any]:
     path = visual_design_path(directory)
     try:
         model = visual_design_model(path)
     except GoalFlowError as exc:
         return {"ok": False, "reasons": [str(exc)], "path": str(path), "pages": []}
     reasons: list[str] = []
+    structural_reasons: list[str] = []
     page_names = {page["name"].strip().lower() for page in model["pages"]}
     for required in ("architecture", "critical data flow"):
         if required not in page_names:
-            reasons.append(f"architecture.drawio needs a '{required}' page")
+            structural_reasons.append(f"architecture.drawio needs a '{required}' page")
+    all_ids: dict[str, str] = {}
+    protocol_edges: dict[str, str] = {}
+    contract_cards: dict[str, str] = {}
+    coverage = {
+        "components": 0,
+        "protocols": 0,
+        "contracts": 0,
+        "failure_paths": 0,
+        "requirements": set(),
+    }
+    for page in model["pages"]:
+        for cell in page["cells"]:
+            cell_id = str(cell.get("id") or "")
+            if not cell_id:
+                continue
+            if cell_id in all_ids:
+                structural_reasons.append(f"Draw.io cell id is duplicated: {cell_id}")
+            else:
+                all_ids[cell_id] = page["name"]
     for page in model["pages"]:
         vertices = [cell for cell in page["cells"] if cell["vertex"]]
         edges = [cell for cell in page["cells"] if cell["edge"]]
         if len(vertices) < 3:
-            reasons.append(f"Draw.io page {page['name']} needs at least three semantic nodes")
+            structural_reasons.append(f"Draw.io page {page['name']} needs at least three semantic nodes")
         if page["name"].strip().lower() == "critical data flow" and len(edges) < 2:
-            reasons.append("Critical data flow needs at least two connected steps")
+            structural_reasons.append("Critical data flow needs at least two connected steps")
         for cell in page["cells"]:
             lowered = cell["value"].lower()
             if any(marker in lowered for marker in VISUAL_PLACEHOLDER_MARKERS):
-                reasons.append(f"Draw.io page {page['name']} still contains placeholder: {cell['value']}")
+                structural_reasons.append(f"Draw.io page {page['name']} still contains placeholder: {cell['value']}")
+            cell_id = str(cell.get("id") or "")
+            if not cell_id:
+                structural_reasons.append(f"Draw.io page {page['name']} contains a semantic cell without an id")
+            metadata = cell.get("metadata") or {}
+            kind = str(metadata.get("data-kind") or "").strip().lower()
+            if kind in {"title", "legend"}:
+                continue
+            if not kind:
+                structural_reasons.append(
+                    f"Draw.io page {page['name']} cell {cell_id} needs data-kind metadata"
+                )
+            if not cell.get("parent"):
+                structural_reasons.append(f"Draw.io cell {cell_id} needs a parent reference")
+            description = str(metadata.get("data-description") or "").strip()
+            if not description or not substantive(description):
+                structural_reasons.append(
+                    f"Draw.io page {page['name']} cell {cell_id} needs a substantive data-description"
+                )
+            requirement_ids = {
+                item.strip() for item in re.split(r"[,;\s]+", str(metadata.get("data-requirements") or ""))
+                if item.strip()
+            }
+            if not requirement_ids:
+                structural_reasons.append(
+                    f"Draw.io page {page['name']} cell {cell_id} needs data-requirements metadata"
+                )
+            coverage["requirements"].update(requirement_ids)
+            if cell["vertex"] and kind in {"component", "entry", "process", "output", "store", "actor", "service"}:
+                coverage["components"] += 1
+            if kind == "failure":
+                coverage["failure_paths"] += 1
+            if kind == "protocol" and cell["edge"]:
+                contract_id = str(metadata.get("data-contract-id") or "").strip()
+                if not contract_id:
+                    structural_reasons.append(f"Protocol edge {cell_id} needs data-contract-id metadata")
+                else:
+                    protocol_edges[contract_id] = cell_id
+                    coverage["protocols"] += 1
+                if not cell.get("source") or not cell.get("target"):
+                    structural_reasons.append(f"Protocol edge {cell_id} must reference source and target cells")
+                elif cell.get("source") not in all_ids or cell.get("target") not in all_ids:
+                    structural_reasons.append(f"Protocol edge {cell_id} references an unknown source or target")
+            if kind == "contract" and cell["vertex"]:
+                contract_id = str(metadata.get("data-contract-id") or "").strip()
+                if not contract_id:
+                    structural_reasons.append(f"Contract card {cell_id} needs data-contract-id metadata")
+                else:
+                    contract_cards[contract_id] = cell_id
+                    coverage["contracts"] += 1
+                required_contract_fields = {
+                    "data-protocol", "data-request", "data-response", "data-errors",
+                    "data-fields", "data-auth", "data-timeout-ms", "data-retry", "data-idempotency",
+                }
+                missing_contract = sorted(key for key in required_contract_fields if not metadata.get(key))
+                if missing_contract:
+                    structural_reasons.append(
+                        f"Contract card {cell_id} is missing: {', '.join(missing_contract)}"
+                    )
+                field_specs = [item for item in str(metadata.get("data-fields") or "").split(";") if item.strip()]
+                if field_specs and any(len(item.split("|")) < 5 for item in field_specs):
+                    structural_reasons.append(
+                        f"Contract card {cell_id} fields need name, type, requiredness, validation, and meaning"
+                    )
+                visible = lowered
+                term_groups = {
+                    "request": ("request", "请求"),
+                    "response": ("response", "响应", "返回"),
+                    "field": ("field", "字段"),
+                    "type": ("type", "类型"),
+                    "required": ("required", "必填"),
+                    "validation": ("validation", "校验", "验证"),
+                    "meaning": ("meaning", "含义"),
+                    "error": ("error", "错误"),
+                    "auth": ("auth", "鉴权", "认证"),
+                    "retry": ("retry", "重试"),
+                    "idempotency": ("idempot", "幂等"),
+                }
+                for label, terms in term_groups.items():
+                    if not any(term in visible for term in terms):
+                        structural_reasons.append(f"Contract card {cell_id} must visibly explain {label}")
+        for cell in edges:
+            if not cell.get("parent"):
+                structural_reasons.append(f"Draw.io edge {cell.get('id')} needs a parent reference")
+            if cell.get("source") and cell.get("source") not in all_ids:
+                structural_reasons.append(f"Draw.io edge {cell.get('id')} references unknown source {cell.get('source')}")
+            if cell.get("target") and cell.get("target") not in all_ids:
+                structural_reasons.append(f"Draw.io edge {cell.get('id')} references unknown target {cell.get('target')}")
+    for contract_id in sorted(set(protocol_edges) - set(contract_cards)):
+        structural_reasons.append(f"Protocol {contract_id} has no visible contract card")
+    if "critical data flow" in page_names:
+        flow = next(page for page in model["pages"] if page["name"].strip().lower() == "critical data flow")
+        flow_kinds = {str((cell.get("metadata") or {}).get("data-kind") or "").lower() for cell in flow["cells"]}
+        for required_kind in ("entry", "process", "output", "failure"):
+            if required_kind not in flow_kinds:
+                structural_reasons.append(f"Critical data flow needs a {required_kind} node")
+    if coverage["protocols"] and coverage["protocols"] != coverage["contracts"]:
+        structural_reasons.append("Every protocol edge must have exactly one visible contract card")
+    if state is not None:
+        known_requirements = set(state.get("requirements", {}))
+        unknown_requirements = sorted(coverage["requirements"] - known_requirements)
+        if known_requirements and unknown_requirements:
+            structural_reasons.append(
+                "Visual design references unknown requirements: " + ", ".join(unknown_requirements)
+            )
+        must_requirements = {
+            req_id for req_id, item in state.get("requirements", {}).items()
+            if item.get("kind") == "must"
+        }
+        uncovered = sorted(must_requirements - coverage["requirements"])
+        if uncovered:
+            structural_reasons.append(
+                "MUST requirements missing from visual design: " + ", ".join(uncovered)
+            )
+    reasons.extend(structural_reasons)
+    viewer = visual_viewer_path(directory)
+    viewer_fresh = False
+    viewer_reason = "viewer is missing"
+    if viewer.exists():
+        try:
+            marker = re.search(r'data-source-semantic-hash="([0-9a-f]{64})"', viewer.read_text(encoding="utf-8"))
+        except OSError:
+            marker = None
+        expected_hash = visual_design_semantic_hash(path)
+        if marker and marker.group(1) == expected_hash:
+            viewer_fresh = True
+            viewer_reason = "viewer matches the current Draw.io semantic hash"
+        else:
+            viewer_reason = "viewer is stale; run design-render"
     return {
         "ok": not reasons,
         "reasons": reasons,
         "path": str(path),
-        "viewer": str(visual_viewer_path(directory)),
+        "viewer": str(viewer),
+        "viewer_fresh": viewer_fresh,
+        "viewer_reason": viewer_reason,
         "pages": [page["name"] for page in model["pages"]],
         "semantic_hash": visual_design_semantic_hash(path),
+        "coverage": {
+            **{key: value for key, value in coverage.items() if key != "requirements"},
+            "requirements": sorted(coverage["requirements"]),
+        },
     }
 
 
@@ -495,6 +729,12 @@ def render_visual_viewer(directory: Path, title: str) -> Path:
     if not source.exists():
         raise GoalFlowError(f"Missing visual design: {source}")
     xml = source.read_text(encoding="utf-8")
+    semantic_hash = visual_design_semantic_hash(source)
+    pages = visual_design_model(source)["pages"]
+    page_index = " · ".join(
+        f"<span class=\"page-name\">{html.escape(str(page['name']))}</span>"
+        for page in pages
+    )
     config = json.dumps({
         "highlight": "#0000ff",
         "nav": True,
@@ -510,15 +750,17 @@ def render_visual_viewer(directory: Path, title: str) -> Path:
   <title>{html.escape(title)} — Architecture</title>
   <style>
     html, body {{ height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: #f8fafc; color: #0f172a; }}
-    header {{ height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #fff; border-bottom: 1px solid #e2e8f0; }}
+    header {{ min-height: 48px; display: flex; align-items: center; gap: 18px; padding: 6px 16px; background: #fff; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }}
+    nav {{ color: #475569; font-size: 13px; flex: 1; }}
+    .page-name {{ display: inline-block; margin-right: 8px; padding: 3px 8px; border: 1px solid #cbd5e1; border-radius: 999px; }}
     main {{ height: calc(100% - 49px); }}
     .mxgraph {{ width: 100%; height: 100%; border: 0; }}
     a {{ color: #4f46e5; text-decoration: none; }}
   </style>
 </head>
 <body>
-  <header><strong>{html.escape(title)}</strong><a href="architecture.drawio">下载 / 用 Draw.io 编辑源文件</a></header>
-  <main><div class="mxgraph" data-mxgraph="{html.escape(config, quote=True)}"></div></main>
+  <header><strong>{html.escape(title)}</strong><nav aria-label="Diagram pages">页面：{page_index}</nav><a href="architecture.drawio">下载 / 用 Draw.io 编辑源文件</a></header>
+  <main><div class="mxgraph" data-source-semantic-hash="{semantic_hash}" data-mxgraph="{html.escape(config, quote=True)}"></div></main>
   <script src="https://viewer.diagrams.net/js/viewer-static.min.js"></script>
 </body>
 </html>
@@ -777,7 +1019,13 @@ def definitions_hash(state: dict[str, Any]) -> str:
     }
     if int(state.get("contract_version", 1)) >= 2:
         definitions["profile"] = state.get("profile", "strict")
-        definitions["harness"] = state.get("harness", {})
+        harness = dict(state.get("harness", {}) or {})
+        # Contract v3 did not include the visual_design default.  Do not let
+        # load-time normalization change the identity of an already-approved
+        # v3 contract.  New goals use v4 and include the complete harness.
+        if int(state.get("contract_version", 1)) < 4:
+            harness.pop("visual_design", None)
+        definitions["harness"] = harness
         definitions["resolved_harness"] = state.get("resolved_harness") or resolve_harness(state)
         definitions["decision_check"] = state.get("decision_check", {})
     raw = json.dumps(definitions, sort_keys=True, separators=(",", ":"))
@@ -914,6 +1162,7 @@ def evidence_freshness(
     root: Path,
     evidence_sha: str | None,
     state: dict[str, Any] | None = None,
+    product_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     """Explain whether a receipt still describes the current product tree."""
     result = {
@@ -933,6 +1182,14 @@ def evidence_freshness(
         result["reason"] = "uncommitted product changes invalidate evidence"
         result["invalidated_paths"] = product_status_paths(root)
         return result
+    if product_fingerprint:
+        current_fingerprint = product_worktree_fingerprint(root)
+        if current_fingerprint != product_fingerprint:
+            result["reason"] = "product tree fingerprint changed after verification"
+            result["invalidated_paths"] = product_status_paths(root)
+            result["product_fingerprint"] = current_fingerprint
+            return result
+        result["product_fingerprint"] = current_fingerprint
     if run_git(root, "merge-base", "--is-ancestor", evidence_sha, "HEAD") is None:
         result["reason"] = "evidence commit is not an ancestor of HEAD"
         return result
@@ -960,8 +1217,9 @@ def evidence_is_fresh(
     root: Path,
     evidence_sha: str | None,
     state: dict[str, Any] | None = None,
+    product_fingerprint: str | None = None,
 ) -> bool:
-    return bool(evidence_freshness(root, evidence_sha, state)["fresh"])
+    return bool(evidence_freshness(root, evidence_sha, state, product_fingerprint)["fresh"])
 
 
 def evidence_mode_satisfies(actual: str | None, minimum: str | None) -> bool:
@@ -997,7 +1255,12 @@ def verifiers_are_fresh(root: Path, state: dict[str, Any], check_ids: list[str])
     return bool(check_ids) and all(
         check_id in state.get("checks", {})
         and state["checks"][check_id].get("status") == "PASS"
-        and evidence_is_fresh(root, state["checks"][check_id].get("git_sha"), state)
+        and evidence_is_fresh(
+            root,
+            state["checks"][check_id].get("git_sha"),
+            state,
+            state["checks"][check_id].get("product_fingerprint"),
+        )
         for check_id in check_ids
     )
 
@@ -1014,10 +1277,14 @@ def delivery_freshness(root: Path, state: dict[str, Any]) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for req_id, item in state.get("requirements", {}).items():
         if item.get("kind") == "must" and item.get("status") == "VERIFIED":
-            items.append({"id": req_id, **evidence_freshness(root, item.get("git_sha"), state)})
+            items.append({"id": req_id, **evidence_freshness(
+                root, item.get("git_sha"), state, item.get("product_fingerprint")
+            )})
     for check_id, item in state.get("checks", {}).items():
         if item.get("required") and item.get("status") == "PASS":
-            items.append({"id": check_id, **evidence_freshness(root, item.get("git_sha"), state)})
+            items.append({"id": check_id, **evidence_freshness(
+                root, item.get("git_sha"), state, item.get("product_fingerprint")
+            )})
     stale = [item for item in items if not item["fresh"]]
     invalidated_paths = sorted({path for item in stale for path in item["invalidated_paths"]})
     if not items:
@@ -1133,19 +1400,20 @@ def substantive(value: str | None) -> bool:
 
 
 def has_open_user_questions(text: str) -> bool:
-    match = re.search(
+    patterns = (
         r"^##\s+Questions requiring user decision\s*$([\s\S]*?)(?=^##\s+|\Z)",
-        text,
-        flags=re.IGNORECASE | re.MULTILINE,
+        r"^##\s+仍需用户决定\s*$([\s\S]*?)(?=^##\s+|\Z)",
     )
-    if not match:
-        return False
-    for line in match.group(1).splitlines():
-        value = line.strip().lstrip("- ").strip()
-        if not value or value.lower() in {"none", "none after repository inspection.", "no unresolved questions."}:
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+        if not match:
             continue
-        if substantive(value):
-            return True
+        for line in match.group(1).splitlines():
+            value = line.strip().lstrip("- *").strip()
+            if not value or value.lower() in {"none", "none after repository inspection.", "no unresolved questions.", "无", "无待决定"}:
+                continue
+            if substantive(value):
+                return True
     return False
 
 
@@ -1159,7 +1427,7 @@ def decision_check_from_goal(text: str, state: dict[str, Any]) -> dict[str, Any]
         "status": current.get("status") or "none",
     }
     match = re.search(
-        r"^##\s+Decision Check\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        r"^##\s+(?:Decision Check|决策检查)\s*$([\s\S]*?)(?=^##\s+|\Z)",
         text,
         flags=re.IGNORECASE | re.MULTILINE,
     )
@@ -1169,16 +1437,33 @@ def decision_check_from_goal(text: str, state: dict[str, Any]) -> dict[str, Any]
             "auto-decided": "auto_decided",
             "recommended defaults": "recommended_defaults",
             "user decisions": "user_decisions",
+            "已自动确定": "auto_decided",
+            "建议默认": "recommended_defaults",
+            "仍需用户决定": "user_decisions",
         }
         for label, key in labels.items():
-            found = re.search(rf"^[-*]?\s*{re.escape(label)}\s*:\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
+            found = re.search(rf"^[-*]?\s*{re.escape(label)}\s*[:：]\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
             if found:
                 value = found.group(1).strip()
                 result[key] = [] if value.lower() in {"none", "无", "none after repository inspection."} else [value]
-        status = re.search(r"^[-*]?\s*status\s*:\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
+        status = re.search(r"^[-*]?\s*(?:status|状态)\s*[:：]\s*(.+)$", section, re.IGNORECASE | re.MULTILINE)
         if status:
             normalized = status.group(1).strip().lower()
-            result["status"] = "resolved" if normalized in {"resolved", "ready", "已解决", "无待决定"} else "pending"
+            result["status"] = "resolved" if normalized in {"resolved", "ready", "已解决", "无待决定", "已解决"} else "pending"
+    chinese_section = re.search(
+        r"^##\s+仍需用户决定\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        text,
+        flags=re.MULTILINE,
+    )
+    if chinese_section and not result["user_decisions"]:
+        questions = [
+            line.strip().lstrip("- *").strip()
+            for line in chinese_section.group(1).splitlines()
+            if line.strip().lstrip("- *").strip()
+        ]
+        result["user_decisions"] = [item for item in questions if substantive(item)]
+        if result["user_decisions"]:
+            result["status"] = "pending"
     if not result["user_decisions"] and has_open_user_questions(text):
         result["user_decisions"] = ["Questions requiring user decision contains unresolved items"]
         result["status"] = "pending"
@@ -1390,11 +1675,15 @@ def plan_readiness(directory: Path, state: dict[str, Any]) -> dict[str, Any]:
             reasons.append("goal.md needs an Acceptance criteria section")
 
     decision_check = decision_check_from_goal(goal_text, state)
+    if decision_check.get("user_decisions") or decision_check.get("status") == "pending":
+        reasons.append("Resolve every item in the Decision Check before approval")
 
     visual_check = None
     if visual_design_enabled(state):
-        visual_check = visual_design_check(directory)
+        visual_check = visual_design_check(directory, state)
         reasons.extend(f"Visual design: {reason}" for reason in visual_check["reasons"])
+        if visual_check.get("ok") and not visual_check.get("viewer_fresh"):
+            reasons.append(f"Visual design: {visual_check.get('viewer_reason')}")
 
     requirements = state.get("requirements", {})
     must = {key: value for key, value in requirements.items() if value.get("kind") == "must"}
@@ -1620,16 +1909,22 @@ def assurance_payload(root: Path, state: dict[str, Any], current_sha: str) -> di
     requirements = state.get("requirements", {})
     must = [item for item in requirements.values() if item.get("kind") == "must"]
     verified = [item for item in must if item.get("status") == "VERIFIED"]
-    fresh = [item for item in verified if evidence_is_fresh(root, item.get("git_sha"), state)]
+    fresh = [item for item in verified if evidence_is_fresh(
+        root, item.get("git_sha"), state, item.get("product_fingerprint")
+    )]
     required_checks = [item for item in state.get("checks", {}).values() if item.get("required")]
     passing_checks = [
         item for item in required_checks
-        if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"), state)
+        if item.get("status") == "PASS" and evidence_is_fresh(
+            root, item.get("git_sha"), state, item.get("product_fingerprint")
+        )
     ]
     required_goal_checks = [item for item in required_checks if item.get("role") == "goal"]
     passing_goal_checks = [
         item for item in required_goal_checks
-        if item.get("status") == "PASS" and evidence_is_fresh(root, item.get("git_sha"), state)
+        if item.get("status") == "PASS" and evidence_is_fresh(
+            root, item.get("git_sha"), state, item.get("product_fingerprint")
+        )
     ]
     evidence_downgrades = [
         item for item in must
@@ -1763,7 +2058,7 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
     incomplete = [
         key for key, value in must.items()
         if value.get("status") != "VERIFIED"
-        or not evidence_is_fresh(root, value.get("git_sha"), state)
+        or not evidence_is_fresh(root, value.get("git_sha"), state, value.get("product_fingerprint"))
         or not evidence_is_fresh_after_rejection(value, state.get("delivery_rejection_baseline"))
     ]
     checks = state.get("checks", {})
@@ -1777,7 +2072,7 @@ def evaluate_gate(root: Path, directory: Path, state: dict[str, Any]) -> dict[st
     failing_checks = [
         key for key, value in required_checks.items()
         if value.get("status") != "PASS"
-        or not evidence_is_fresh(root, value.get("git_sha"), state)
+        or not evidence_is_fresh(root, value.get("git_sha"), state, value.get("product_fingerprint"))
         or not evidence_is_fresh_after_rejection(value, state.get("delivery_rejection_baseline"))
     ]
     serious_risks = [
@@ -1860,8 +2155,18 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         behavior_change=behavior_change,
         cross_session=args.cross_session,
         autonomous=args.autonomous,
-        default_mode="standard" if args.mode == "auto" else args.mode,
+        default_mode=args.mode,
     )
+    # ``init`` creates a persistent Goal Flow record; keep it at least
+    # Standard even when auto-classification says a one-line task could use
+    # the direct micro path.
+    if args.mode == "auto" and classification["mode"] == "micro":
+        classification["mode"] = "standard"
+        classification["resolved_harness"] = "standard"
+        classification["harness"]["plan"] = "lightweight"
+        classification["harness"]["approval"] = "conditional"
+        classification["harness"]["resume"] = False
+        classification["reasons"].append("persistent goals use at least the Standard harness")
     profile = "strict" if args.profile == "standard" and classification["profile"] == "strict" else args.profile
     mode = classification["mode"]
     required_dimensions = (
@@ -1952,9 +2257,10 @@ Keep this checklist traceable to REQ-* or SCN-* IDs. Additive task edits do not 
             "behavior_change": behavior_change,
             "visual_design": bool(args.visual_design),
             "baseline_product_fingerprint": baseline_product_fingerprint,
+            "baseline_git_sha": current_git_sha(root),
             "classification_reasons": classification["reasons"],
         },
-        "contract_version": 3,
+        "contract_version": 4,
         "state_revision": 0,
         "worktree_binding": None,
         "status": "PLANNING",
@@ -2019,6 +2325,8 @@ def cmd_status(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "effective_status": effective_status(root, state),
         "status": effective_status(root, state),
         "phase": phase_for_state(state),
+        "design_hash": design_hash(goal_dir(root, goal_id), state),
+        "definitions_hash": definitions_hash(state),
         "gate": gate.get("gate"),
         "freshness": freshness,
         "invalidated_paths": freshness["invalidated_paths"],
@@ -2033,7 +2341,7 @@ def cmd_design_check(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if not visual_design_enabled(state):
         raise GoalFlowError("This goal was not initialized with --visual-design")
-    result = visual_design_check(directory)
+    result = visual_design_check(directory, state)
     return {
         **result,
         "phase": phase_for_state(state),
@@ -2170,7 +2478,7 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
     verified = [
         item for item in must
         if item.get("status") == "VERIFIED"
-        and evidence_is_fresh(root, item.get("git_sha"), state)
+        and evidence_is_fresh(root, item.get("git_sha"), state, item.get("product_fingerprint"))
     ]
     failed_checks = sorted(
         (
@@ -2201,6 +2509,8 @@ def build_summary(root: Path, goal_id: str, state: dict[str, Any]) -> dict[str, 
         "stored_status": state.get("status"),
         "effective_status": effective_status(root, state),
         "phase": phase_for_state(state),
+        "design_hash": design_hash(goal_dir(root, goal_id), state),
+        "definitions_hash": definitions_hash(state),
         "gate": gate.get("gate"),
         "freshness": freshness,
         "invalidated_paths": freshness["invalidated_paths"],
@@ -2262,7 +2572,9 @@ def build_report(
             "id": requirement_id,
             "kind": item.get("kind"),
             "status": item.get("status"),
-            "freshness": evidence_freshness(root, item.get("git_sha"), state),
+            "freshness": evidence_freshness(
+                root, item.get("git_sha"), state, item.get("product_fingerprint")
+            ),
             "minimum_evidence_mode": item.get("minimum_evidence_mode"),
         }
         for requirement_id, item in sorted(state.get("requirements", {}).items())
@@ -2272,7 +2584,7 @@ def build_report(
             "id": check_id,
             "required": bool(item.get("required")),
             "status": item.get("status"),
-            "fresh": evidence_is_fresh(root, item.get("git_sha"), state),
+            "fresh": evidence_is_fresh(root, item.get("git_sha"), state, item.get("product_fingerprint")),
             "duration_ms": item.get("duration_ms"),
             "timed_out": bool(item.get("timed_out")),
             "termination": item.get("termination"),
@@ -2529,6 +2841,10 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         return {"ok": True, "message": "Design approval already applied", "state": state, "idempotent": True}
     if state["status"] not in {"PLANNING", "WAITING_PLAN_APPROVAL"}:
         raise GoalFlowError(f"Cannot approve from {state['status']}")
+    current_design_hash = design_hash(directory, state)
+    expected_design_hash = getattr(args, "expected_design_hash", None)
+    if expected_design_hash and expected_design_hash != current_design_hash:
+        raise GoalFlowError("方案内容已变化，请刷新方案并重新审批")
     readiness = plan_readiness(directory, state)
     if not readiness["ok"]:
         raise GoalFlowError("Plan is not approval-ready: " + "; ".join(readiness["reasons"]))
@@ -2550,7 +2866,7 @@ def cmd_approve(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     state["decision_check"] = decision_check
     state.update({
         "approved": True,
-        "approved_design_hash": design_hash(directory, state),
+        "approved_design_hash": current_design_hash,
         "approved_definitions_hash": definitions_hash(state),
         "status": "EXECUTING",
         "current_milestone": args.milestone or "M1",
@@ -2599,6 +2915,7 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         minimum_evidence_mode = args.minimum_evidence_mode or prior.get("minimum_evidence_mode")
         if minimum_evidence_mode not in EVIDENCE_MODES:
             raise GoalFlowError("Requirements need --minimum-evidence-mode: mock, simulated, or real")
+        product_fingerprint: str | None = None
         if state.get("approved"):
             if not prior:
                 raise GoalFlowError("Approved requirement set is frozen; run replan before adding one")
@@ -2619,7 +2936,12 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
                 check_id for check_id in verified_by
                 if check_id not in state.get("checks", {})
                 or state["checks"][check_id].get("status") != "PASS"
-                or not evidence_is_fresh(root, state["checks"][check_id].get("git_sha"), state)
+                or not evidence_is_fresh(
+                    root,
+                    state["checks"][check_id].get("git_sha"),
+                    state,
+                    state["checks"][check_id].get("product_fingerprint"),
+                )
             ]
             if not verified_by or invalid:
                 suffix = f": {', '.join(invalid)}" if invalid else ""
@@ -2646,6 +2968,13 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
                     f"Requirement evidence SHA must match linked check receipts ({derived_sha})"
                 )
             sha = derived_sha
+            linked_fingerprints = {
+                state["checks"][check_id].get("product_fingerprint")
+                for check_id in verified_by
+            }
+            if len(linked_fingerprints) != 1 or None in linked_fingerprints:
+                raise GoalFlowError("VERIFIED requirements need linked checks from one identical product tree")
+            product_fingerprint = next(iter(linked_fingerprints))
         state["requirements"][args.id] = {
             "statement": statement,
             "kind": kind,
@@ -2657,6 +2986,10 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "status": args.status,
             "evidence": args.evidence,
             "git_sha": sha if args.status != "UNVERIFIED" else None,
+            "product_fingerprint": (
+                product_fingerprint or product_worktree_fingerprint(root)
+                if args.status != "UNVERIFIED" else None
+            ),
             "updated_at": now(),
             "updated_at_ns": time.time_ns(),
         }
@@ -2684,6 +3017,7 @@ def cmd_record(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "summary": None,
             "output_digest": None,
             "git_sha": None,
+            "product_fingerprint": None,
             "updated_at": now(),
         }
     elif args.record_type == "risk":
@@ -2840,6 +3174,8 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot verify immutable goal {state['status']}")
+    if state["status"] == "PAUSED":
+        raise GoalFlowError("Cannot verify a paused goal; resume it before running checks")
     if not state.get("approved"):
         raise GoalFlowError("Check commands cannot run before explicit design approval")
     require_bound_worktree(root, state)
@@ -2866,10 +3202,20 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     sha = current_git_sha(root)
     if sha == "UNBORN":
         raise GoalFlowError("Verification requires an existing Git commit")
+    if (
+        is_lightweight_standard(state)
+        and product_tree_is_acceptable(root, state)
+        and product_worktree_fingerprint(root) == state.get("harness", {}).get("baseline_product_fingerprint")
+        and sha == state.get("harness", {}).get("baseline_git_sha")
+    ):
+        raise GoalFlowError(
+            "Standard cannot verify a delivery without a product-tree change after goal initialization"
+        )
     timeout = int(check.get("timeout") or 300)
     execution = execute_verifier(command, root, timeout)
     returncode = execution["returncode"]
     output = execution["output"]
+    product_fingerprint = product_worktree_fingerprint(root)
     failure_class, recommended_action = classify_failure(execution)
     clean_after = product_tree_is_acceptable(root, state)
     status = "PASS" if returncode == 0 and clean_after else "FAIL"
@@ -2890,6 +3236,7 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             f"{time.time_ns()}:{args.id}:{sha}:{output}".encode()
         ).hexdigest()[:24],
         "git_sha": sha,
+        "product_fingerprint": product_fingerprint,
         "duration_ms": execution["duration_ms"],
         "timed_out": execution["timed_out"],
         "termination": execution["termination"],
@@ -2915,6 +3262,7 @@ def cmd_verify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "recommended action": recommended_action,
         "environment": json.dumps(check["environment"], sort_keys=True),
         "Git SHA": sha,
+        "product fingerprint": product_fingerprint,
     })
     return {
         "ok": status == "PASS",
@@ -2942,6 +3290,7 @@ def cmd_update(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if args.status and args.status not in EDITABLE_STATUSES:
         raise GoalFlowError(f"Use a dedicated command for status {args.status}")
     if args.status:
+        ensure_status_transition(state["status"], args.status)
         state["status"] = args.status
     if args.milestone:
         state["current_milestone"] = args.milestone
@@ -3000,9 +3349,9 @@ def cmd_replan(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "epoch": None,
     })
     for item in state.get("requirements", {}).values():
-        item.update({"status": "UNVERIFIED", "evidence": None, "git_sha": None})
+        item.update({"status": "UNVERIFIED", "evidence": None, "git_sha": None, "product_fingerprint": None})
     for item in state.get("checks", {}).values():
-        item.update({"status": "PENDING", "summary": None, "output_digest": None, "git_sha": None})
+        item.update({"status": "PENDING", "summary": None, "output_digest": None, "git_sha": None, "product_fingerprint": None})
     save_state(directory, state)
     return {"ok": True, "message": "Goal returned to planning", "state": state}
 
@@ -3011,6 +3360,8 @@ def cmd_pause(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot pause {state['status']}")
+    if state["status"] == "PAUSED":
+        raise GoalFlowError("Goal is already paused")
     state["resume_status"] = state["status"]
     state["status"] = "PAUSED"
     state["wait_reason"] = args.reason
@@ -3035,6 +3386,8 @@ def cmd_block(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     _, directory, state = load_state(root, args.goal_id)
     if state["status"] in {"ACCEPTED", "CANCELLED"}:
         raise GoalFlowError(f"Cannot block immutable goal {state['status']}")
+    if state["status"] == "BLOCKED":
+        raise GoalFlowError("Goal is already blocked")
     state["resume_status"] = state["status"]
     state["status"] = "BLOCKED"
     state["wait_reason"] = args.reason
@@ -3153,6 +3506,9 @@ def cmd_accept(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     require_bound_worktree(root, state)
     if state["status"] != "READY_FOR_ACCEPTANCE":
         raise GoalFlowError("Only a goal ready for acceptance can be accepted")
+    expected_design_hash = getattr(args, "expected_design_hash", None)
+    if expected_design_hash and expected_design_hash != design_hash(directory, state):
+        raise GoalFlowError("交付设计已变化，请刷新交付后重新审批")
     gate = evaluate_gate(root, directory, state)
     if gate["gate"] != "READY_FOR_REVIEW":
         reasons = "; ".join(gate.get("reasons") or ["delivery evidence is stale"])
@@ -3193,6 +3549,27 @@ def cmd_reject(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         "rejected_at": now(),
         "rejected_at_ns": time.time_ns(),
     }
+    # A rejected delivery starts a new acceptance epoch.  Keep the old
+    # receipts in evidence.md for audit, but make their state explicitly stale
+    # so a new epoch cannot be blocked by already-VERIFIED requirements.
+    for requirement in state.get("requirements", {}).values():
+        if requirement.get("kind") == "must":
+            requirement.update({
+                "status": "UNVERIFIED",
+                "evidence": None,
+                "git_sha": None,
+                "product_fingerprint": None,
+            })
+    for check in state.get("checks", {}).values():
+        if check.get("required"):
+            check.update({
+                "status": "PENDING",
+                "summary": None,
+                "output_digest": None,
+                "git_sha": None,
+                "product_fingerprint": None,
+            })
+    state["epoch"] = None
     state.update({"status": "EXECUTING", "next_action": args.reason, "wait_reason": None})
     save_state(directory, state)
     append_evidence(directory, "Delivery rejected", {
@@ -3264,6 +3641,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve.add_argument("--auto-approved", action="store_true")
     approve.add_argument("--approved-by", default="user")
     approve.add_argument("--expected-state-revision", type=int)
+    approve.add_argument("--expected-design-hash")
 
     goals = sub.add_parser("goals")
 
@@ -3312,7 +3690,9 @@ def build_parser() -> argparse.ArgumentParser:
     classify.add_argument("--cross-session", action="store_true")
     classify.add_argument("--autonomous", action="store_true")
     classify.add_argument("--behavior-change", action="store_true")
-    classify.add_argument("--default-mode", choices=["micro", "standard", "goal-flow"], default="micro")
+    classify.add_argument(
+        "--default-mode", choices=["auto", "micro", "standard", "goal-flow", "strict"], default="auto"
+    )
 
     context = sub.add_parser("context")
     context.add_argument("--init", action="store_true")
@@ -3362,6 +3742,7 @@ def build_parser() -> argparse.ArgumentParser:
     accept.add_argument("--user-accepted", action="store_true")
     accept.add_argument("--accepted-by", default="user")
     accept.add_argument("--expected-state-revision", type=int)
+    accept.add_argument("--expected-design-hash")
 
     reject = sub.add_parser("reject")
     reject.add_argument("--goal-id")

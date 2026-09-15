@@ -202,6 +202,33 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(self.marketplace(), marketplace_before)
         self.assertFalse(list((self.home / "plugins").glob("goal-flow.backup-*")))
 
+    def test_early_copy_failure_preserves_previous_plugin_and_marketplace(self) -> None:
+        self.assertEqual(self.run_script(INSTALL, "--yes").returncode, 0)
+        destination = self.home / "plugins" / "goal-flow"
+        marker = destination / "previous-install.txt"
+        marker.write_text("keep this version\n", encoding="utf-8")
+        marketplace_before = self.marketplace()
+        args = Namespace(
+            home=str(self.home),
+            no_codex=True,
+            yes=True,
+            dry_run=False,
+            setup_hooks=False,
+            no_hooks=True,
+        )
+
+        with patch.object(
+            plugin_manager,
+            "copy_plugin",
+            side_effect=plugin_manager.InstallError("copy failed before backup"),
+        ):
+            with self.assertRaises(plugin_manager.InstallError):
+                plugin_manager.install(args)
+
+        self.assertEqual(marker.read_text(encoding="utf-8"), "keep this version\n")
+        self.assertEqual(self.marketplace(), marketplace_before)
+        self.assertFalse(list((self.home / "plugins").glob("goal-flow.backup-*")))
+
 
 if __name__ == "__main__":
     unittest.main()

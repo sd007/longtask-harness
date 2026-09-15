@@ -1,6 +1,6 @@
 {
   "name": "goal-flow",
-  "version": "0.11.0+codex.20260915010000",
+  "version": "0.11.0+codex.20260915042538",
   "description": "Align software requirements visually, then implement and accept them with evidence-backed gates.",
   "author": {
     "name": "Local developer"

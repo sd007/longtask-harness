@@ -96,6 +96,40 @@ class GoalCtlTests(unittest.TestCase):
         self.assertEqual(long_task["mode"], "goal-flow")
         self.assertEqual(long_task["profile"], "strict")
 
+    def test_explicit_harness_mode_is_never_downgraded(self) -> None:
+        goal_flow = self.ctl(
+            "classify", "--goal", "Add a user-visible feature", "--behavior-change",
+            "--files", "3", "--steps", "3", "--default-mode", "goal-flow",
+        )
+        strict = self.ctl(
+            "classify", "--goal", "Add a user-visible feature", "--behavior-change",
+            "--files", "3", "--steps", "3", "--default-mode", "strict",
+        )
+        self.assertEqual(goal_flow["mode"], "goal-flow")
+        self.assertEqual(strict["mode"], "goal-flow")
+        self.assertEqual(strict["profile"], "strict")
+        safety_floor = self.ctl(
+            "classify", "--goal", "Migrate tenant data", "--task-type", "migration",
+            "--risk-level", "high", "--default-mode", "standard",
+        )
+        self.assertEqual(safety_floor["profile"], "strict")
+
+    def test_open_chinese_decision_blocks_plan_approval(self) -> None:
+        self.write_complete_goal()
+        goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
+        text = goal.read_text(encoding="utf-8")
+        text = text.replace(
+            "## Questions requiring user decision\n- None after repository inspection.",
+            "## 仍需用户决定\n- 数据保留 7 天还是永久保留？",
+        )
+        goal.write_text(text, encoding="utf-8")
+        self.record_check("--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement()
+        self.register_dimensions()
+        denied = self.ctl("plan-check", expected=1)
+        self.assertEqual(denied["decision_check"]["status"], "pending")
+        self.assertTrue(any("Decision Check" in item for item in denied["reasons"]))
+
     def test_project_context_is_scaffolded_and_readable(self) -> None:
         context_path = self.repo / ".goal-flow" / "context.md"
         self.assertFalse(context_path.exists())
@@ -717,6 +751,17 @@ Required check TEST: {check_command}
         payload = self.ctl("approve", "--next-action", "Implement", expected=2)
         self.assertIn("Explicit user approval", payload["error"])
 
+    def test_approval_rejects_changed_design_snapshot(self) -> None:
+        self.prepare_plan()
+        snapshot = self.ctl("summary", "--json")["design_hash"]
+        goal = self.repo / ".goal-flow" / "test-goal" / "goal.md"
+        goal.write_text(goal.read_text(encoding="utf-8") + "\nAdditional approved constraint.\n", encoding="utf-8")
+        denied = self.ctl(
+            "approve", "--user-approved", "--expected-design-hash", snapshot,
+            "--next-action", "Implement", expected=2,
+        )
+        self.assertIn("方案内容已变化", denied["error"])
+
     def test_approved_design_drift_stops_gate(self) -> None:
         self.register_and_approve()
         sha = self.commit_product()
@@ -909,6 +954,19 @@ Required check TEST: {check_command}
         rendered = self.ctl("design-render")
         self.assertEqual(Path(rendered["viewer"]).resolve(), (directory / "architecture.html").resolve())
 
+    def test_visual_design_requires_protocol_field_contracts(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "visual-fields", "--title", "Visual Fields",
+            "--goal", "Design and ship an understandable change", "--mode", "standard",
+            "--visual-design",
+        )
+        drawing = self.complete_visual_design_for("visual-fields")
+        source = drawing.read_text(encoding="utf-8").replace(' data-fields="id|UUID|required|format|identity"', "", 1)
+        drawing.write_text(source, encoding="utf-8")
+        denied = self.ctl("design-check", expected=1)
+        self.assertTrue(any("data-fields" in item for item in denied["reasons"]))
+
     def test_visual_design_semantics_are_frozen_but_layout_remains_editable(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
         self.ctl(
@@ -929,6 +987,7 @@ Required check TEST: {check_command}
             "functional is covered by the observable acceptance criterion",
             "--requirement-id", "REQ-001",
         )
+        self.ctl("design-render", "--goal-id", "visual-contract")
         self.assertEqual(self.ctl("plan-check", "--goal-id", "visual-contract")["gate"], "READY_FOR_APPROVAL")
         auto = self.ctl(
             "approve", "--goal-id", "visual-contract", "--auto-approved",
@@ -1075,6 +1134,12 @@ Required check TEST: {check_command}
         self.assertEqual(self.ctl("gate")["gate"], "WAIT")
         resumed = self.ctl("resume")
         self.assertEqual(resumed["state"]["status"], "EXECUTING")
+
+    def test_paused_goal_cannot_run_verification(self) -> None:
+        self.register_and_approve()
+        self.ctl("pause", "--reason", "等待用户输入")
+        denied = self.ctl("verify", "--id", "TEST", expected=2)
+        self.assertIn("paused", denied["error"])
 
     def test_resume_goal_id_requires_explicit_switch_and_updates_active_pointer(self) -> None:
         self.ctl(

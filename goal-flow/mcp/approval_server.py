@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +65,11 @@ def tool_definition() -> dict[str, Any]:
                     "type": "integer",
                     "minimum": 1,
                     "description": "当前状态 state_revision，用于防止过期按钮提交。",
+                },
+                "expected_design_hash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "打开审批控件时的设计快照 hash，防止用户看到的方案与最终冻结内容不一致。",
                 },
                 "summary": {
                     "type": "string",
@@ -167,6 +173,7 @@ class ApprovalServer:
         decision: str,
         feedback: str,
         state_revision: int | None = None,
+        expected_design_hash: str | None = None,
     ) -> tuple[bool, str]:
         command = [sys.executable, str(CONTROLLER), "--root", str(root)]
         if phase == "plan" and decision == "approve":
@@ -179,6 +186,8 @@ class ApprovalServer:
             return True, "未执行状态转换"
         if state_revision is not None:
             command += ["--expected-state-revision", str(state_revision)]
+        if expected_design_hash:
+            command += ["--expected-design-hash", expected_design_hash]
         if goal_id:
             command += ["--goal-id", goal_id]
         result = subprocess.run(command, text=True, capture_output=True, check=False)
@@ -198,9 +207,14 @@ class ApprovalServer:
         summary = _text(arguments.get("summary"), limit=MAX_TEXT)
         goal_id = _text(arguments.get("goal_id"), limit=200)
         revision = arguments.get("revision")
+        expected_design_hash = _text(arguments.get("expected_design_hash"), limit=100)
         approved_by = _text(arguments.get("approved_by"), default="user", limit=100) or "user"
         next_action = _text(arguments.get("next_action"), limit=1000)
         if goal_id:
+            if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", goal_id):
+                return {"isError": True, "content": [{"type": "text", "text": "goal_id 必须是 lowercase kebab-case"}]}
+            if revision is None or not expected_design_hash:
+                return {"isError": True, "content": [{"type": "text", "text": "带 goal_id 的审批必须携带 revision 和 expected_design_hash"}]}
             state_path = root / ".goal-flow" / goal_id / "state.json"
             if state_path.exists() and revision is not None:
                 try:
@@ -226,6 +240,7 @@ class ApprovalServer:
         ok, transition = self.run_transition(
             phase, root, goal_id, next_action, approved_by, decision, feedback,
             int(revision) if revision is not None else None,
+            expected_design_hash or None,
         )
         payload = {
             "ok": ok,
