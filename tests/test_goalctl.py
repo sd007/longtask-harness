@@ -44,7 +44,10 @@ class GoalCtlTests(unittest.TestCase):
         (self.repo / "README.md").write_text("fixture\n", encoding="utf-8")
         self.git("add", "README.md")
         self.git("commit", "-qm", "initial")
-        self.ctl("init", "--goal-id", "test-goal", "--title", "Test Goal", "--goal", "Ship it", "--mode", "goal-flow")
+        self.ctl(
+            "init", "--goal-id", "test-goal", "--title", "Test Goal", "--goal", "Ship it",
+            "--mode", "goal-flow", "--files", "3", "--steps", "3",
+        )
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
