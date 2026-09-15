@@ -53,7 +53,7 @@ Never place secret values in `goal.md` or verifier commands. Refer to environmen
 
 ## Assess the selected profile
 
-Use the lightweight `standard` Harness for normal day-to-day repository work and `strict` when security, migration, production reliability, irreversible actions, or similarly costly failure modes are material. Full `goal-flow` keeps explicit approval and the complete evidence contract; lightweight standard work may use implicit approval when no high-impact question remains.
+Use the lightweight `standard` Harness for normal day-to-day repository work and `strict` when security, migration, production reliability, irreversible actions, or similarly costly failure modes are material. Full `goal-flow` keeps explicit approval and the complete evidence contract; a simple low-risk task may skip only the final result-confirmation approval after passing the same hard gate. Lightweight standard work may use implicit approval when no high-impact question remains.
 
 For lightweight `standard`, assess `functional`, `performance-reliability`, and `evolvability-maintainability`, define one observable MUST criterion, and register one valid required controller check. A dimension may be `N_A` when its rationale shows why it is immaterial. Every requirement declares `minimum_evidence_mode`; every check declares `role`, `evidence_mode`, covered requirements, what it proves, and its limitations. Full `goal-flow`, strict, and behavior-change tasks require a goal-level check over the real user main path. Full `goal-flow` standard additionally assesses the key boundary and regression/compatibility. For `strict`, continue through the full list:
 

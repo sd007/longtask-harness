@@ -59,6 +59,13 @@ class InteractionContractTests(unittest.TestCase):
         self.assertIn("普通任务（包括普通 Goal Flow）留在当前分支", self.usage)
         self.assertIn("new projects, major features, migrations", self.skill)
 
+    def test_simple_tasks_can_skip_result_confirmation_only_with_a_hard_gate(self) -> None:
+        contract = self.skill + self.planning + self.usage
+        self.assertIn("A simple task may complete directly after the same hard gate", contract)
+        self.assertIn("不再弹出结果确认", contract)
+        self.assertIn("不超过两个文件和两个步骤", contract)
+        self.assertIn("All other Goal Flow, strict", contract)
+
 
 if __name__ == "__main__":
     unittest.main()

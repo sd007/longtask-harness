@@ -30,7 +30,7 @@ Goal Flow 不依赖 Agent 自报“已完成”。Skill 先根据任务规模、
 
 ## 状态模型
 
-规划与等待状态不会触发自动续跑；`EXECUTING` 和 `VERIFYING` 允许 Gate 返回 `CONTINUE`；完整 Goal Flow 的硬门槛满足后进入 `READY_FOR_ACCEPTANCE`，只有用户明确确认才进入 `ACCEPTED`；低风险、非行为变化的 Standard 通过硬门槛后直接完成，行为变化或中风险 Standard 仍进入 `READY_FOR_ACCEPTANCE`。
+规划与等待状态不会触发自动续跑；`EXECUTING` 和 `VERIFYING` 允许 Gate 返回 `CONTINUE`；完整 Goal Flow 的硬门槛满足后通常进入 `READY_FOR_ACCEPTANCE`，但低风险、非视觉、非行为变化、非跨会话/自治且不超过两文件两步骤的简单任务可直接进入 `ACCEPTED`；高影响、行为变化或中风险任务仍进入 `READY_FOR_ACCEPTANCE`。
 
 需要改变批准基线时必须 `replan`。统一合同哈希覆盖 `goal.md`、profile、验收标准、证据范围、失败模式、依据来源、所需质量维度、标准到检查的映射以及检查命令；任何批准后的静默改写都会触发漂移，Gate 立即停止自动推进。旧目标缺少 profile 时按 `strict` 解释，保持原有八维合同。
 

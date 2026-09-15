@@ -2,13 +2,14 @@
 
 ## Outcome
 
-普通任务留在当前分支；仅新项目、重大特性或高风险改动自动使用隔离分支或 worktree；Git 提交信息清楚说明变更对象、行为变化和目的/边界。
+普通任务留在当前分支；仅新项目、重大特性或高风险改动自动使用隔离分支或 worktree；Git 提交信息清楚说明变更对象、行为变化和目的/边界；简单任务通过同一硬门槛后可免结果确认审批。
 
 ## Non-goals
 
 - 不改变 Standard 的当前工作树行为。
 - 不取消用户显式要求的隔离，也不改变验证、审批和证据机制。
 - 不改写已经产生的 Git 历史，只约束后续提交。
+- 不降低简单任务的测试、证据或硬门槛，只省略最终结果确认这一层交互。
 
 ## Context and sources
 
@@ -16,6 +17,7 @@
 - `classify_harness` 已能区分 task type、risk level、文件数和步骤数，但没有把“是否需要隔离”作为独立策略。
 - 用户明确要求普通任务不切换分支，仅新项目、重大特性或高风险改动隔离。
 - 用户明确要求提交信息不要过短，要能说明改动内容和解决的问题。
+- 用户明确要求简单任务完成后可以不再进行结果确认审批。
 
 ## Assumptions and decisions
 
@@ -47,6 +49,7 @@
 - `classify_harness` 产出任务形态和隔离建议；`cmd_init` 保存新项目/重大特性信号；`cmd_bind_worktree` 只按统一策略决定是否切换。
 - 当前分支仍写入 binding，验证阶段继续检查 root/git_dir/branch 一致性；不改变证据绑定方式。
 - 提交规范写入 Skill、执行参考和交互契约测试；提交主体保留 Conventional Commits 前缀，描述使用当前对话语言，并在需要时补充正文说明影响和验证。
+- 简单任务判定集中在控制器策略：低/未指定风险、非视觉、非行为变化、非跨会话/自治、非新项目/重大特性/迁移，且不超过两个文件和两个步骤。
 
 ## Evolvability probe
 
@@ -61,11 +64,11 @@
 
 | Dimension | COVERED or N_A | Rationale | Criterion IDs |
 | --- | --- | --- | --- |
-| functional | COVERED | 分类、绑定行为和提交规范契约由单元测试验证。 | REQ-001, REQ-002 |
+| functional | COVERED | 分类、绑定行为、提交规范和简单任务验收路径由单元测试验证。 | REQ-001, REQ-002, REQ-003 |
 | performance-reliability | N_A | 仅改变本地分支选择，不改变运行时性能路径。 | REQ-001 |
-| evolvability-maintainability | COVERED | 隔离触发条件和提交表达规则均集中在可持续维护的 Skill/策略入口。 | REQ-001, REQ-002 |
-| negative-boundary | COVERED | 覆盖普通任务不切换、新项目/重大特性/高风险切换，以及不改写旧历史。 | REQ-001, REQ-002 |
-| regression-compatibility | COVERED | 保留 Standard 当前工作树和显式覆盖行为；不改写已有提交历史。 | REQ-001, REQ-002 |
+| evolvability-maintainability | COVERED | 隔离触发条件、提交表达规则和简单任务判定均集中在可持续维护的 Skill/策略入口。 | REQ-001, REQ-002, REQ-003 |
+| negative-boundary | COVERED | 覆盖普通任务不切换、新项目/重大特性/高风险切换、不改写旧历史，以及复杂任务仍需结果确认。 | REQ-001, REQ-002, REQ-003 |
+| regression-compatibility | COVERED | 保留 Standard 当前工作树和显式覆盖行为；不改写已有提交历史；行为变化任务仍保留最终验收。 | REQ-001, REQ-002, REQ-003 |
 
 ## Acceptance criteria
 
@@ -73,6 +76,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | REQ-001 | MUST | 普通任务在当前分支执行；新项目、重大特性、迁移和 high/critical 风险才使用隔离分支或 worktree。 | 控制器测试覆盖分类、绑定和显式覆盖。 | 普通 Goal Flow 不应切换；已存在隔离分支、detached HEAD 和显式覆盖继续按既有错误/审计规则处理。 | 用户明确要求减少无必要分支切换，同时保留高风险隔离。 | CHK-ALL |
 | REQ-002 | MUST | 后续 Git 提交信息保留 Conventional Commits 类型，并清楚说明变更对象、核心行为变化及目的或边界；必要时正文补充影响和验证。 | Skill、执行参考、项目用法和交互契约测试均包含该规则。 | 不要求改写已有提交；不把提交正文写成无关的实现流水账。 | 用户明确要求提交信息更清晰，避免过短而无法判断交付内容。 | CHK-ALL |
+| REQ-003 | MUST | 简单任务通过同一硬门槛后直接完成，不再弹出结果确认审批；复杂、风险或行为变化任务仍进入结果确认。 | 控制器测试验证简单 Goal Flow 自动完成，且行为变化任务继续进入 READY_FOR_ACCEPTANCE。 | 简单任务必须低/未指定风险、无视觉/行为变化、非跨会话/自治、非新项目/重大特性/迁移，且不超过两个文件和两个步骤。 | 用户希望小任务减少交互，但不能削弱质量门槛或误放行高影响改动。 | CHK-ALL |
 
 ## Product scenarios
 
@@ -101,6 +105,18 @@ Choose 3–5 high-value scenarios when useful; the minimum is the real main path
 - GIVEN 一个需要提交的实现里程碑
 - WHEN Goal Flow 生成或指导 Git 提交信息
 - THEN 首行说明类型、变更对象和核心行为变化；必要时正文说明目的、边界和验证结果，且不改写已有历史
+
+#### SCN-005 (REQ-003): 简单任务免结果确认
+
+- GIVEN 一个低风险、非视觉、非行为变化且不超过两个文件和两个步骤的本地任务
+- WHEN 所有 MUST 证据和 required check 通过并执行 `gate --apply`
+- THEN 控制器直接完成目标，不再要求结果确认审批
+
+#### SCN-006 (REQ-003): 复杂任务保留结果确认
+
+- GIVEN 一个行为变化、中风险、视觉或超过简单任务范围的目标
+- WHEN 所有 MUST 证据和 required check 通过并执行 `gate --apply`
+- THEN 目标进入 `READY_FOR_ACCEPTANCE`，仍需结果确认
 
 ## Milestones
 

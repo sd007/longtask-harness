@@ -245,6 +245,34 @@ def context_template() -> str:
 """
 
 
+def simple_task_shape(
+    *,
+    task_type: str,
+    risk_level: str,
+    files: int,
+    steps: int,
+    behavior_change: bool,
+    cross_session: bool,
+    autonomous: bool,
+    new_project: bool,
+    major_feature: bool,
+    visual_design: bool,
+) -> bool:
+    """Keep result-confirmation prompts for meaningful or risky work."""
+    return (
+        not behavior_change
+        and not visual_design
+        and risk_level in {"unspecified", "low"}
+        and not cross_session
+        and not autonomous
+        and not new_project
+        and not major_feature
+        and task_type != "migration"
+        and files <= 2
+        and steps <= 2
+    )
+
+
 def classify_harness(
     *,
     task_type: str = "unspecified",
@@ -256,6 +284,7 @@ def classify_harness(
     autonomous: bool = False,
     new_project: bool = False,
     major_feature: bool = False,
+    visual_design: bool = False,
     default_mode: str = "auto",
 ) -> dict[str, Any]:
     """Choose the smallest harness that covers the task's observable risk."""
@@ -269,6 +298,18 @@ def classify_harness(
     inferred_major_feature = bool(
         major_feature or (task_type == "feature" and (files >= 8 or steps >= 5))
     )
+    simple_task = simple_task_shape(
+        task_type=task_type,
+        risk_level=risk_level,
+        files=files,
+        steps=steps,
+        behavior_change=behavior_change,
+        cross_session=cross_session,
+        autonomous=autonomous,
+        new_project=new_project,
+        major_feature=inferred_major_feature,
+        visual_design=visual_design,
+    ) and default_mode != "strict"
     isolation_required = bool(
         new_project
         or inferred_major_feature
@@ -323,6 +364,7 @@ def classify_harness(
                 "resume": mode == "goal-flow",
                 "isolation_required": isolation_required,
                 "isolation_reasons": isolation_reasons,
+                "simple_task": simple_task,
             },
         }
     strict_risk = risk_level in {"high", "critical"} or task_type == "migration"
@@ -370,6 +412,7 @@ def classify_harness(
             "resume": mode == "goal-flow",
             "isolation_required": isolation_required,
             "isolation_reasons": isolation_reasons,
+            "simple_task": simple_task,
         },
     }
 
@@ -948,13 +991,30 @@ def is_lightweight_standard(state: dict[str, Any]) -> bool:
     )
 
 
+def simple_task_auto_completion_allowed(state: dict[str, Any]) -> bool:
+    """Allow simple, low-risk work to finish without a result-confirmation prompt."""
+    harness = state.get("harness", {})
+    return (
+        state.get("profile") == "standard"
+        and resolve_harness(state) in {"standard", "goal-flow"}
+        and not harness.get("behavior_change")
+        and not visual_design_enabled(state)
+        and harness.get("risk_level") in {"unspecified", "low"}
+        and not harness.get("cross_session")
+        and not harness.get("autonomous")
+        and not harness.get("new_project")
+        and not harness.get("major_feature")
+        and harness.get("task_type") != "migration"
+        and int(harness.get("files", 99)) <= 2
+        and int(harness.get("steps", 99)) <= 2
+    )
+
+
 def standard_auto_completion_allowed(state: dict[str, Any]) -> bool:
-    """Only silently complete low-risk, non-public-behavior Standard work."""
+    """Backward-compatible alias for simple Standard auto-completion."""
     return (
         is_lightweight_standard(state)
-        and not state.get("harness", {}).get("behavior_change")
-        and not visual_design_enabled(state)
-        and state.get("harness", {}).get("risk_level") in {"unspecified", "low"}
+        and simple_task_auto_completion_allowed(state)
     )
 
 
@@ -963,7 +1023,7 @@ def compact_harness(state: dict[str, Any]) -> dict[str, Any]:
     harness = state.get("harness", {})
     result = {
         key: harness.get(key)
-        for key in ("mode", "task_type", "risk_level", "behavior_change", "visual_design")
+        for key in ("mode", "task_type", "risk_level", "behavior_change", "visual_design", "simple_task")
         if key in harness
     }
     result["resolved_harness"] = state.get("resolved_harness") or resolve_harness(state)
@@ -2229,6 +2289,7 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         autonomous=args.autonomous,
         new_project=bool(args.new_project or current_git_sha(root) == "UNBORN"),
         major_feature=args.major_feature,
+        visual_design=args.visual_design,
         default_mode=args.mode,
     )
     # ``init`` creates a persistent Goal Flow record; keep it at least
@@ -2318,8 +2379,13 @@ def cmd_init(args: argparse.Namespace, root: Path) -> dict[str, Any]:
             "risk_level": args.risk_level,
             "behavior_change": behavior_change,
             "visual_design": bool(args.visual_design),
+            "files": args.files,
+            "steps": args.steps,
+            "cross_session": bool(args.cross_session),
+            "autonomous": bool(args.autonomous),
             "new_project": bool(args.new_project or current_git_sha(root) == "UNBORN"),
             "major_feature": classification["inputs"].get("major_feature", False),
+            "simple_task": bool(classification["harness"].get("simple_task")) and profile == "standard",
             "isolation_required": classification["harness"].get("isolation_required", False),
             "isolation_reasons": classification["harness"].get("isolation_reasons", []),
             "baseline_product_fingerprint": baseline_product_fingerprint,
@@ -2830,6 +2896,7 @@ def cmd_classify(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         autonomous=args.autonomous,
         new_project=bool(args.new_project or current_git_sha(root) == "UNBORN"),
         major_feature=args.major_feature,
+        visual_design=args.visual_design,
         default_mode=args.default_mode,
     )
     result["goal"] = args.goal
@@ -3519,7 +3586,7 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
     if (
         args.apply
         and result["gate"] == "READY_FOR_REVIEW"
-        and standard_auto_completion_allowed(state)
+        and simple_task_auto_completion_allowed(state)
     ):
         state["status"] = "ACCEPTED"
         state["next_action"] = None
@@ -3534,7 +3601,7 @@ def cmd_gate(args: argparse.Namespace, root: Path) -> dict[str, Any]:
         deactivate_goal(root, state["goal_id"])
         result["gate"] = "ACCEPTED"
         result["status"] = "ACCEPTED"
-        result["message"] = "Standard Harness delivery completed"
+        result["message"] = "Simple task delivery completed without result confirmation"
         result["stored_status"] = "ACCEPTED"
         result["effective_status"] = "ACCEPTED"
         result["state_changed"] = True
@@ -3763,6 +3830,7 @@ def build_parser() -> argparse.ArgumentParser:
     classify.add_argument("--cross-session", action="store_true")
     classify.add_argument("--autonomous", action="store_true")
     classify.add_argument("--behavior-change", action="store_true")
+    classify.add_argument("--visual-design", action="store_true")
     classify.add_argument("--new-project", action="store_true")
     classify.add_argument("--major-feature", action="store_true")
     classify.add_argument(

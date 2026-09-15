@@ -301,6 +301,30 @@ Required check TEST: test -f feature.txt
         accepted = self.ctl("accept", "--goal-id", "behavior-standard", "--user-accepted", "--accepted-by", "test-user")
         self.assertEqual(accepted["state"]["status"], "ACCEPTED")
 
+    def test_simple_goal_flow_skips_result_confirmation(self) -> None:
+        self.ctl("cancel", "--reason", "replace default goal")
+        self.ctl(
+            "init", "--goal-id", "simple-goal-flow", "--title", "Simple Goal Flow", "--goal", "Refresh a small document",
+            "--mode", "goal-flow", "--task-type", "docs", "--risk-level", "low", "--files", "1", "--steps", "1",
+        )
+        self.write_complete_goal_for("simple-goal-flow")
+        self.record_check("--goal-id", "simple-goal-flow", "--id", "TEST", "--status", "PENDING", "--required", "--command", "test -f feature.txt")
+        self.register_requirement_for("simple-goal-flow")
+        self.register_dimensions_for("simple-goal-flow")
+        self.ctl("approve", "--goal-id", "simple-goal-flow", "--user-approved", "--next-action", "Implement simple task")
+        self.ctl("bind-worktree", "--goal-id", "simple-goal-flow")
+        sha = self.commit_product()
+        self.ctl("verify", "--goal-id", "simple-goal-flow", "--id", "TEST")
+        self.ctl(
+            "record", "requirement", "--goal-id", "simple-goal-flow", "--id", "REQ-001", "--kind", "must",
+            "--status", "VERIFIED", "--statement", "feature.txt exists with expected content",
+            "--evidence", "Verified by the executed TEST receipt", "--git-sha", sha, *REQUIREMENT_EVIDENCE_ARGS,
+        )
+        completed = self.ctl("gate", "--goal-id", "simple-goal-flow", "--apply")
+        self.assertEqual(completed["gate"], "ACCEPTED")
+        self.assertEqual(completed["status"], "ACCEPTED")
+        self.assertIn("without result confirmation", completed["message"])
+
     def test_standard_mode_supports_implicit_approval_and_current_worktree(self) -> None:
         self.ctl("cancel", "--reason", "replace default goal")
         self.ctl(
