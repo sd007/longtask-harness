@@ -2,41 +2,28 @@
   "approval_mode": "explicit",
   "approved": true,
   "approved_by": "user",
-  "approved_definitions_hash": "aaacfb3952e9ec0a44923516447abd625dc01047a4a88c4285e06e82e720fdde",
-  "approved_design_hash": "1457a27fe8cab657f215ffac0dff19b64572e8855630bf9db0b7133be203e825",
+  "approved_definitions_hash": "c86e5a2f384c99ad6d3149b8e554ac2a2e35288946e3debffc5f2021b8dafbf1",
+  "approved_design_hash": "500c5d1f2b832ae818c185c3be328eb46fb25aa55f082f6a69bf304b541cb6cb",
   "branch": "codex/goal-flow-streamline-quality-loop",
   "checks": {
     "CHK-ALL": {
       "command": "python3 -m unittest discover -s tests -v",
       "covers": [
-        "REQ-001"
+        "REQ-001",
+        "REQ-002"
       ],
-      "duration_ms": 77770,
-      "environment": {
-        "architecture": "arm64",
-        "lockfiles": {},
-        "os": "Darwin",
-        "os_release": "25.6.0",
-        "python": "3.13.3"
-      },
       "evidence_mode": "real",
-      "failure_class": null,
-      "git_sha": "14415c598697cb4e119d000803acd80d54db2356",
-      "limitations": "\u4e0d\u8bc1\u660e\u5916\u90e8\u4ed3\u5e93\u7684\u5206\u652f\u7b56\u7565\u6216\u56e2\u961f\u4e1a\u52a1\u5224\u65ad\u3002",
-      "output_digest": "e47c09f706b31015b371028e51083e2007541804edb4ead2633d5b210d29983d",
-      "product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
-      "proves": "\u9a8c\u8bc1\u666e\u901a\u4efb\u52a1\u4e0e\u9ad8\u5f71\u54cd\u4efb\u52a1\u7684\u5206\u652f\u7ed1\u5b9a\u7b56\u7565\u4ee5\u53ca\u65e2\u6709 Standard/\u663e\u5f0f\u8986\u76d6\u884c\u4e3a\u3002",
-      "receipt_id": "b049e089500f85bc2f619bca",
-      "recommended_action": null,
+      "git_sha": null,
+      "limitations": "\u4e0d\u8bc1\u660e\u5916\u90e8\u4ed3\u5e93\u7684\u5206\u652f\u7ea6\u5b9a\u6216\u4eba\u5de5\u5224\u65ad\uff1b\u4e0d\u8bc1\u660e Git \u5386\u53f2\u5df2\u6709\u63d0\u4ea4\u5df2\u88ab\u6539\u5199\u3002",
+      "output_digest": null,
+      "product_fingerprint": null,
+      "proves": "\u9a8c\u8bc1\u5206\u652f\u9694\u79bb\u7b56\u7565\u4e0e\u6e05\u6670\u63d0\u4ea4\u4fe1\u606f\u89c4\u5219\uff0c\u5305\u542b\u4ea4\u4e92\u5951\u7ea6\u3001\u56de\u5f52\u548c\u5168\u91cf\u6d4b\u8bd5\u3002",
       "required": true,
       "role": "goal",
-      "status": "PASS",
-      "summary": "exit=0 | t_sha_must_match_linked_check_receipt) ... ok\ntest_verifier_receipt_contains_allowlisted_environment_fingerprint (test_goalctl.GoalCtlTests.test_verifier_receipt_contains_allowlisted_environment_fingerprint) ... ok\ntest_verifier_timeout_kills_descendant_process_group (test_goalctl.GoalCtlTests.test_verifier_timeout_kills_descendant_process_group) ... ok\ntest_visual_design_requires_protocol_field_contracts (test_goalctl.GoalCtlTests.test_visual_design_requires_protocol_field_contracts) ... ok\ntest_visual_design_scaffold_is_editable_previewable_and_required (test_goalctl.GoalCtlTests.test_visual_design_scaffold_is_editable_previewable_and_required) ... ok\ntest_visual_design_semantics_are_frozen_but_layout_remains_editable (test_goalctl.GoalCtlTests.test_visual_design_semantics_are_frozen_but_layout_remains_editable) ... ok\ntest_plugin_hooks_config_matches_codex_schema (test_hooks.HookTests.test_plugin_hooks_config_matches_codex_schema) ... ok\ntest_session_start_is_silent_without_goal_and_restores_active_goal (test_hooks.HookTests.test_session_start_is_silent_without_goal_and_restores_active_goal) ... ok\ntest_stop_continues_execution_but_not_planning_or_repeated_stall (test_hooks.HookTests.test_stop_continues_execution_but_not_planning_or_repeated_stall) ... ok\ntest_bundled_mcp_configuration_completes_real_initialize_handshake (test_installer.InstallerTests.test_bundled_mcp_configuration_completes_real_initialize_handshake) ... ok\ntest_dry_run_changes_nothing (test_installer.InstallerTests.test_dry_run_changes_nothing) ... ok\ntest_early_copy_failure_preserves_previous_plugin_and_marketplace (test_installer.InstallerTests.test_early_copy_failure_preserves_previous_plugin_and_marketplace) ... ok\ntest_failed_codex_install_restores_previous_plugin_and_marketplace (test_installer.InstallerTests.test_failed_codex_install_restores_previous_plugin_and_marketplace) ... ok\ntest_failed_mcp_check_restores_previous_plugin_and_marketplace (test_installer.InstallerTests.test_failed_mcp_check_restores_previous_plugin_and_marketplace) ... ok\ntest_install_merges_marketplace_and_copies_plugin (test_installer.InstallerTests.test_install_merges_marketplace_and_copies_plugin) ... ok\ntest_installed_plugin_can_uninstall_itself (test_installer.InstallerTests.test_installed_plugin_can_uninstall_itself) ... ok\ntest_interactive_install_offers_codex_hook_setup (test_installer.InstallerTests.test_interactive_install_offers_codex_hook_setup) ... ok\ntest_invalid_marketplace_is_never_overwritten (test_installer.InstallerTests.test_invalid_marketplace_is_never_overwritten) ... ok\ntest_one_command_wrappers_install_and_uninstall (test_installer.InstallerTests.test_one_command_wrappers_install_and_uninstall) ... ok\ntest_reinstall_replaces_entry_without_duplicates (test_installer.InstallerTests.test_reinstall_replaces_entry_without_duplicates) ... ok\ntest_uninstall_preserves_other_entries_and_is_recoverable (test_installer.InstallerTests.test_uninstall_preserves_other_entries_and_is_recoverable) ... ok\ntest_approval_has_button_labels_and_natural_language_fallback (test_interaction_contract.InteractionContractTests.test_approval_has_button_labels_and_natural_language_fallback) ... ok\ntest_branch_isolation_defaults_to_shared_worktree (test_interaction_contract.InteractionContractTests.test_branch_isolation_defaults_to_shared_worktree) ... ok\ntest_commit_language_follows_conversation_and_repo_convention (test_interaction_contract.InteractionContractTests.test_commit_language_follows_conversation_and_repo_convention) ... ok\ntest_decision_check_is_visible_and_asks_only_high_impact_questions (test_interaction_contract.InteractionContractTests.test_decision_check_is_visible_and_asks_only_high_impact_questions) ... ok\ntest_quality_loop_stays_compact_and_product_shaped (test_interaction_contract.InteractionContractTests.test_quality_loop_stays_compact_and_product_shaped) ... ok\n\n----------------------------------------------------------------------\nRan 88 tests in 77.687s\n\nOK",
-      "termination": null,
-      "timed_out": false,
+      "status": "PENDING",
+      "summary": null,
       "timeout": 300,
-      "updated_at": "2026-09-15T07:14:55Z",
-      "updated_at_ns": 1789456495215751000
+      "updated_at": "2026-09-15T07:33:37Z"
     }
   },
   "contract_version": 4,
@@ -57,28 +44,31 @@
   "delivery_rejection_baseline": null,
   "dimensions": {
     "evolvability-maintainability": {
-      "rationale": "\u9694\u79bb\u89e6\u53d1\u6761\u4ef6\u96c6\u4e2d\u5728\u53ef\u6269\u5c55\u7b56\u7565\u51fd\u6570\u3002",
+      "rationale": "\u9694\u79bb\u89e6\u53d1\u6761\u4ef6\u548c\u63d0\u4ea4\u8868\u8fbe\u89c4\u5219\u5747\u96c6\u4e2d\u5728\u53ef\u6301\u7eed\u7ef4\u62a4\u7684 Skill/\u7b56\u7565\u5165\u53e3\u3002",
       "requirement_ids": [
-        "REQ-001"
+        "REQ-001",
+        "REQ-002"
       ],
       "status": "COVERED",
-      "updated_at": "2026-09-15T07:07:13Z"
+      "updated_at": "2026-09-15T07:34:11Z"
     },
     "functional": {
-      "rationale": "\u5206\u7c7b\u4e0e\u7ed1\u5b9a\u884c\u4e3a\u7531\u5355\u5143\u6d4b\u8bd5\u9a8c\u8bc1\u3002",
+      "rationale": "\u5206\u7c7b\u3001\u7ed1\u5b9a\u884c\u4e3a\u548c\u63d0\u4ea4\u89c4\u8303\u5951\u7ea6\u7531\u5355\u5143\u6d4b\u8bd5\u9a8c\u8bc1\u3002",
       "requirement_ids": [
-        "REQ-001"
+        "REQ-001",
+        "REQ-002"
       ],
       "status": "COVERED",
-      "updated_at": "2026-09-15T07:07:13Z"
+      "updated_at": "2026-09-15T07:34:11Z"
     },
     "negative-boundary": {
-      "rationale": "\u8986\u76d6\u666e\u901a\u4efb\u52a1\u4e0d\u5207\u6362\u3001\u65b0\u9879\u76ee/\u91cd\u5927\u7279\u6027/\u9ad8\u98ce\u9669\u5207\u6362\u3002",
+      "rationale": "\u8986\u76d6\u666e\u901a\u4efb\u52a1\u4e0d\u5207\u6362\u3001\u65b0\u9879\u76ee/\u91cd\u5927\u7279\u6027/\u9ad8\u98ce\u9669\u5207\u6362\uff0c\u4ee5\u53ca\u4e0d\u6539\u5199\u65e7\u5386\u53f2\u3002",
       "requirement_ids": [
-        "REQ-001"
+        "REQ-001",
+        "REQ-002"
       ],
       "status": "COVERED",
-      "updated_at": "2026-09-15T07:07:13Z"
+      "updated_at": "2026-09-15T07:34:11Z"
     },
     "performance-reliability": {
       "rationale": "\u4ec5\u6539\u53d8\u672c\u5730\u5206\u652f\u9009\u62e9\uff0c\u4e0d\u6539\u53d8\u8fd0\u884c\u65f6\u6027\u80fd\u8def\u5f84\u3002",
@@ -87,26 +77,18 @@
       "updated_at": "2026-09-15T07:07:13Z"
     },
     "regression-compatibility": {
-      "rationale": "\u4fdd\u7559 Standard \u5f53\u524d\u5de5\u4f5c\u6811\u548c\u663e\u5f0f\u8986\u76d6\u884c\u4e3a\u3002",
+      "rationale": "\u4fdd\u7559 Standard \u5f53\u524d\u5de5\u4f5c\u6811\u548c\u663e\u5f0f\u8986\u76d6\u884c\u4e3a\uff1b\u4e0d\u6539\u5199\u5df2\u6709\u63d0\u4ea4\u5386\u53f2\u3002",
       "requirement_ids": [
-        "REQ-001"
+        "REQ-001",
+        "REQ-002"
       ],
       "status": "COVERED",
-      "updated_at": "2026-09-15T07:07:13Z"
+      "updated_at": "2026-09-15T07:34:11Z"
     }
   },
-  "epoch": {
-    "completed_at": "2026-09-15T07:15:48Z",
-    "started_at": "2026-09-15T07:13:29Z",
-    "target_check_ids": [
-      "CHK-ALL"
-    ],
-    "target_requirement_ids": [
-      "REQ-001"
-    ]
-  },
+  "epoch": null,
   "goal_id": "branch-isolation-policy",
-  "goal_revision": 1,
+  "goal_revision": 2,
   "harness": {
     "baseline_git_sha": "9bb1859e3f1611040c520c4614cc5c2022763fb4",
     "baseline_product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
@@ -122,7 +104,7 @@
   },
   "last_stop_fingerprint": null,
   "last_verified_commit": "14415c598697cb4e119d000803acd80d54db2356",
-  "next_action": "Present the evidence-backed delivery for user acceptance",
+  "next_action": "\u63d0\u4ea4\u6e05\u6670\u63d0\u4ea4\u4fe1\u606f\u89c4\u5219\u5e76\u8fd0\u884c\u51bb\u7ed3\u5168\u91cf\u68c0\u67e5",
   "no_progress_count": 0,
   "profile": "standard",
   "requirements": {
@@ -130,19 +112,40 @@
       "basis": [
         "\u7528\u6237\u660e\u786e\u8981\u6c42\u51cf\u5c11\u65e0\u5fc5\u8981\u5206\u652f\u5207\u6362\uff0c\u540c\u65f6\u4fdd\u7559\u9ad8\u98ce\u9669\u9694\u79bb\u3002"
       ],
-      "evidence": "CHK-ALL 88/88 tests PASS\uff1b\u8986\u76d6\u666e\u901a\u4efb\u52a1\u5f53\u524d\u5206\u652f\u3001\u65b0\u9879\u76ee/\u91cd\u5927\u7279\u6027/\u9ad8\u98ce\u9669\u9694\u79bb\u3001\u65e7\u884c\u4e3a\u548c\u663e\u5f0f\u4f8b\u5916\u3002",
+      "evidence": null,
       "failure_modes": [
         "\u666e\u901a Goal Flow \u4e0d\u5e94\u5207\u6362\uff1b\u5df2\u5b58\u5728\u9694\u79bb\u5206\u652f\u3001detached HEAD \u548c\u663e\u5f0f\u8986\u76d6\u7ee7\u7eed\u6309\u65e2\u6709\u9519\u8bef/\u5ba1\u8ba1\u89c4\u5219\u5904\u7406\u3002"
       ],
-      "git_sha": "14415c598697cb4e119d000803acd80d54db2356",
+      "git_sha": null,
       "kind": "must",
       "minimum_evidence_mode": "real",
-      "product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
+      "product_fingerprint": null,
       "proves": "\u63a7\u5236\u5668\u6d4b\u8bd5\u8986\u76d6\u5206\u7c7b\u3001\u7ed1\u5b9a\u548c\u663e\u5f0f\u8986\u76d6\u3002",
       "statement": "\u666e\u901a\u4efb\u52a1\u5728\u5f53\u524d\u5206\u652f\u6267\u884c\uff1b\u65b0\u9879\u76ee\u3001\u91cd\u5927\u7279\u6027\u3001\u8fc1\u79fb\u548c high/critical \u98ce\u9669\u624d\u4f7f\u7528\u9694\u79bb\u5206\u652f\u6216 worktree\u3002",
-      "status": "VERIFIED",
+      "status": "UNVERIFIED",
       "updated_at": "2026-09-15T07:15:48Z",
       "updated_at_ns": 1789456548596780000,
+      "verified_by": [
+        "CHK-ALL"
+      ]
+    },
+    "REQ-002": {
+      "basis": [
+        "\u7528\u6237\u660e\u786e\u8981\u6c42\u63d0\u4ea4\u4fe1\u606f\u66f4\u6e05\u6670\uff0c\u907f\u514d\u8fc7\u77ed\u800c\u65e0\u6cd5\u5224\u65ad\u4ea4\u4ed8\u5185\u5bb9\u3002"
+      ],
+      "evidence": null,
+      "failure_modes": [
+        "\u4e0d\u8981\u6c42\u6539\u5199\u5df2\u6709\u63d0\u4ea4\uff1b\u4e0d\u628a\u63d0\u4ea4\u6b63\u6587\u5199\u6210\u65e0\u5173\u7684\u5b9e\u73b0\u6d41\u6c34\u8d26\u3002"
+      ],
+      "git_sha": null,
+      "kind": "must",
+      "minimum_evidence_mode": "real",
+      "product_fingerprint": null,
+      "proves": "Skill\u3001\u6267\u884c\u53c2\u8003\u3001\u9879\u76ee\u7528\u6cd5\u548c\u4ea4\u4e92\u5951\u7ea6\u6d4b\u8bd5\u5747\u5305\u542b\u8be5\u89c4\u5219\u3002",
+      "statement": "\u540e\u7eed Git \u63d0\u4ea4\u4fe1\u606f\u4fdd\u7559 Conventional Commits \u7c7b\u578b\uff0c\u5e76\u6e05\u695a\u8bf4\u660e\u53d8\u66f4\u5bf9\u8c61\u3001\u6838\u5fc3\u884c\u4e3a\u53d8\u5316\u53ca\u76ee\u7684\u6216\u8fb9\u754c\uff1b\u5fc5\u8981\u65f6\u6b63\u6587\u8865\u5145\u5f71\u54cd\u548c\u9a8c\u8bc1\u3002",
+      "status": "UNVERIFIED",
+      "updated_at": "2026-09-15T07:33:26Z",
+      "updated_at_ns": 1789457606203454000,
       "verified_by": [
         "CHK-ALL"
       ]
@@ -152,11 +155,11 @@
   "resume_status": null,
   "risks": {},
   "schema_version": 3,
-  "state_revision": 15,
-  "status": "READY_FOR_ACCEPTANCE",
+  "state_revision": 23,
+  "status": "EXECUTING",
   "stop_repeat_count": 0,
   "title": "\u8c03\u6574\u5206\u652f\u9694\u79bb\u9ed8\u8ba4\u7b56\u7565",
-  "updated_at": "2026-09-15T07:15:48Z",
+  "updated_at": "2026-09-15T07:34:25Z",
   "wait_reason": null,
   "worktree_binding": {
     "branch": "codex/goal-flow-streamline-quality-loop",

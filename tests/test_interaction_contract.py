@@ -20,6 +20,13 @@ class InteractionContractTests(unittest.TestCase):
         self.assertIn("仓库已有规范优先", self.usage)
         self.assertIn("feat:", self.execution)
 
+    def test_commit_messages_explain_change_and_boundary(self) -> None:
+        contract = self.skill + self.execution + self.usage
+        self.assertIn("changed object", contract)
+        self.assertIn("core behavior change", contract)
+        self.assertIn("purpose or boundary", contract)
+        self.assertIn("不要求为了润色而改写已有历史", contract)
+
     def test_decision_check_is_visible_and_asks_only_high_impact_questions(self) -> None:
         for label in ("已自动确定", "建议默认", "仍需用户决定"):
             self.assertIn(label, self.planning)

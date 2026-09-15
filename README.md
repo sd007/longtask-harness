@@ -62,7 +62,7 @@ Hook 必须由用户手动信任，安装脚本不会绕过此安全步骤。MCP
 
 - 技术栈：Python 3.12
 - 测试命令：python3 -m unittest discover -s tests -v
-- 提交规范：Conventional Commits，说明使用中文
+- 提交规范：Conventional Commits，说明使用中文；首行写清变更对象和核心行为变化，必要时正文补充目的、边界与验证结果
 - 安全边界：未经确认不得部署或修改生产数据
 ```
 

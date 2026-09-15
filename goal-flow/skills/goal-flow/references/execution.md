@@ -22,7 +22,7 @@ Do not repeat a failed strategy without new evidence. Use `--progress` only when
 - Use subagents for bounded research, test design, and independent review; treat their output as unverified.
 - Commit approved design before implementation.
 - Run preflight checks, then commit a coherent implementation candidate so controller-generated receipts can bind to its SHA. Standard may retain unrelated initialization-baseline edits, but must not introduce additional uncommitted product changes before verification.
-- Write commit subjects in the current conversation language unless the repository has an explicit commit-language convention. Preserve an existing Conventional Commit prefix such as `feat:` or `fix:` and localize the descriptive text; do not silently default a Chinese task to an English sentence.
+- Write commit subjects in the current conversation language unless the repository has an explicit commit-language convention. Preserve an existing Conventional Commit prefix such as `feat:` or `fix:` and localize the descriptive text; do not silently default a Chinese task to an English sentence. The subject should identify the changed object and core behavior change, not just say “update”, “fix”, or “完成”. When that is not enough, add a short body covering the purpose, important boundary, and verification result. Do not rewrite existing history solely to improve wording.
 - If a frozen check fails, fix the defect and create a new implementation commit; never attach the old PASS to the new tree.
 - Inspect the diff before every commit.
 - Never use Git history as proof that behavior is correct.
