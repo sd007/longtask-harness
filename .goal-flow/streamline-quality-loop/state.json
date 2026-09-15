@@ -13,18 +13,32 @@
         "REQ-002",
         "REQ-003"
       ],
+      "duration_ms": 74000,
+      "environment": {
+        "architecture": "arm64",
+        "lockfiles": {},
+        "os": "Darwin",
+        "os_release": "25.6.0",
+        "python": "3.13.3"
+      },
       "evidence_mode": "real",
-      "git_sha": null,
+      "failure_class": null,
+      "git_sha": "93d1545543eff9b9e879fa47d1e0811a6de65ce7",
       "limitations": "\u4e0d\u8bc1\u660e\u6240\u6709\u5916\u90e8\u9879\u76ee\u90fd\u5177\u5907\u540c\u7b49\u6d4b\u8bd5\u8d28\u91cf\uff0c\u4e5f\u4e0d\u66ff\u4ee3\u771f\u5b9e\u4ea7\u54c1\u56e2\u961f\u7684\u65b9\u6848\u5224\u65ad\u3002",
-      "output_digest": null,
-      "product_fingerprint": null,
+      "output_digest": "6da5eac8579a69293abe2eef40a5ba67709a3bc1737d1c507f1eff6a2151a1df",
+      "product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
       "proves": "\u5168\u91cf\u6d4b\u8bd5\u8986\u76d6\u521d\u59cb\u5316\u6a21\u677f\u3001\u8bed\u4e49 review\u3001\u8d28\u91cf\u7ef4\u5ea6\u3001\u6587\u6863\u4ea4\u4e92\u5408\u540c\u548c\u73b0\u6709\u63a7\u5236\u5668\u56de\u5f52\u3002",
+      "receipt_id": "03c69b5f4bb708459652facf",
+      "recommended_action": null,
       "required": true,
       "role": "goal",
-      "status": "PENDING",
-      "summary": null,
+      "status": "PASS",
+      "summary": "exit=0 | .test_summary_has_human_and_json_views) ... ok\ntest_verified_requirement_sha_must_match_linked_check_receipt (test_goalctl.GoalCtlTests.test_verified_requirement_sha_must_match_linked_check_receipt) ... ok\ntest_verifier_receipt_contains_allowlisted_environment_fingerprint (test_goalctl.GoalCtlTests.test_verifier_receipt_contains_allowlisted_environment_fingerprint) ... ok\ntest_verifier_timeout_kills_descendant_process_group (test_goalctl.GoalCtlTests.test_verifier_timeout_kills_descendant_process_group) ... ok\ntest_visual_design_requires_protocol_field_contracts (test_goalctl.GoalCtlTests.test_visual_design_requires_protocol_field_contracts) ... ok\ntest_visual_design_scaffold_is_editable_previewable_and_required (test_goalctl.GoalCtlTests.test_visual_design_scaffold_is_editable_previewable_and_required) ... ok\ntest_visual_design_semantics_are_frozen_but_layout_remains_editable (test_goalctl.GoalCtlTests.test_visual_design_semantics_are_frozen_but_layout_remains_editable) ... ok\ntest_plugin_hooks_config_matches_codex_schema (test_hooks.HookTests.test_plugin_hooks_config_matches_codex_schema) ... ok\ntest_session_start_is_silent_without_goal_and_restores_active_goal (test_hooks.HookTests.test_session_start_is_silent_without_goal_and_restores_active_goal) ... ok\ntest_stop_continues_execution_but_not_planning_or_repeated_stall (test_hooks.HookTests.test_stop_continues_execution_but_not_planning_or_repeated_stall) ... ok\ntest_bundled_mcp_configuration_completes_real_initialize_handshake (test_installer.InstallerTests.test_bundled_mcp_configuration_completes_real_initialize_handshake) ... ok\ntest_dry_run_changes_nothing (test_installer.InstallerTests.test_dry_run_changes_nothing) ... ok\ntest_early_copy_failure_preserves_previous_plugin_and_marketplace (test_installer.InstallerTests.test_early_copy_failure_preserves_previous_plugin_and_marketplace) ... ok\ntest_failed_codex_install_restores_previous_plugin_and_marketplace (test_installer.InstallerTests.test_failed_codex_install_restores_previous_plugin_and_marketplace) ... ok\ntest_failed_mcp_check_restores_previous_plugin_and_marketplace (test_installer.InstallerTests.test_failed_mcp_check_restores_previous_plugin_and_marketplace) ... ok\ntest_install_merges_marketplace_and_copies_plugin (test_installer.InstallerTests.test_install_merges_marketplace_and_copies_plugin) ... ok\ntest_installed_plugin_can_uninstall_itself (test_installer.InstallerTests.test_installed_plugin_can_uninstall_itself) ... ok\ntest_interactive_install_offers_codex_hook_setup (test_installer.InstallerTests.test_interactive_install_offers_codex_hook_setup) ... ok\ntest_invalid_marketplace_is_never_overwritten (test_installer.InstallerTests.test_invalid_marketplace_is_never_overwritten) ... ok\ntest_one_command_wrappers_install_and_uninstall (test_installer.InstallerTests.test_one_command_wrappers_install_and_uninstall) ... ok\ntest_reinstall_replaces_entry_without_duplicates (test_installer.InstallerTests.test_reinstall_replaces_entry_without_duplicates) ... ok\ntest_uninstall_preserves_other_entries_and_is_recoverable (test_installer.InstallerTests.test_uninstall_preserves_other_entries_and_is_recoverable) ... ok\ntest_approval_has_button_labels_and_natural_language_fallback (test_interaction_contract.InteractionContractTests.test_approval_has_button_labels_and_natural_language_fallback) ... ok\ntest_commit_language_follows_conversation_and_repo_convention (test_interaction_contract.InteractionContractTests.test_commit_language_follows_conversation_and_repo_convention) ... ok\ntest_decision_check_is_visible_and_asks_only_high_impact_questions (test_interaction_contract.InteractionContractTests.test_decision_check_is_visible_and_asks_only_high_impact_questions) ... ok\ntest_quality_loop_stays_compact_and_product_shaped (test_interaction_contract.InteractionContractTests.test_quality_loop_stays_compact_and_product_shaped) ... ok\n\n----------------------------------------------------------------------\nRan 84 tests in 73.923s\n\nOK",
+      "termination": null,
+      "timed_out": false,
       "timeout": 300,
-      "updated_at": "2026-09-15T06:41:47Z"
+      "updated_at": "2026-09-15T06:56:40Z",
+      "updated_at_ns": 1789455400911887000
     }
   },
   "contract_version": 4,
@@ -83,7 +97,7 @@
     }
   },
   "epoch": {
-    "completed_at": null,
+    "completed_at": "2026-09-15T06:57:13Z",
     "started_at": "2026-09-15T06:54:42Z",
     "target_check_ids": [
       "CHK-ALL"
@@ -108,8 +122,8 @@
     "visual_design": false
   },
   "last_stop_fingerprint": null,
-  "last_verified_commit": null,
-  "next_action": "\u63d0\u4ea4\u5b9e\u73b0\u5019\u9009\u5e76\u8fd0\u884c\u51bb\u7ed3\u9a8c\u6536\u68c0\u67e5",
+  "last_verified_commit": "93d1545543eff9b9e879fa47d1e0811a6de65ce7",
+  "next_action": "Present the evidence-backed delivery for user acceptance",
   "no_progress_count": 0,
   "profile": "standard",
   "requirements": {
@@ -117,19 +131,19 @@
       "basis": [
         "\u7528\u6237\u786e\u8ba4\u7684\u7cbe\u7b80\u4e09\u9636\u6bb5\u76ee\u6807\u548c\u73b0\u6709 Harness \u5206\u5c42\u3002"
       ],
-      "evidence": null,
+      "evidence": "CHK-ALL 84/84 tests PASS\uff1b\u6a21\u677f\u3001\u4ea4\u4e92\u5408\u540c\u3001\u7ef4\u5ea6\u4e0e\u56de\u5f52\u8def\u5f84\u5747\u5728\u5f53\u524d SHA \u9a8c\u8bc1\u3002",
       "failure_modes": [
         "\u975e\u884c\u4e3a\u53d8\u5316\u548c\u4f4e\u98ce\u9669\u4efb\u52a1\u4ecd\u4fdd\u6301\u8f7b\u91cf\uff1bstrict \u80fd\u7ee7\u7eed\u8986\u76d6\u9ad8\u98ce\u9669\u7ef4\u5ea6\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "93d1545543eff9b9e879fa47d1e0811a6de65ce7",
       "kind": "must",
       "minimum_evidence_mode": "real",
-      "product_fingerprint": null,
+      "product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
       "proves": "\u521d\u59cb\u5316\u4e0e\u4ea4\u4e92\u5408\u540c\u6d4b\u8bd5\u8bc1\u660e\u6a21\u677f\u3001\u6838\u5fc3\u672f\u8bed\u548c\u8d28\u91cf\u7126\u70b9\u53ef\u89c1\u3002",
       "statement": "\u65b0\u76ee\u6807\u6a21\u677f\u548c\u65b9\u6848\u534f\u8bae\u4ee5\u65b9\u6848\u4e00\u81f4\u3001\u5173\u952e\u8def\u5f84\u3001\u7ecf\u5178\u4ea7\u54c1\u573a\u666f\u4e0e\u6f14\u8fdb\u63a2\u9488\u4e3a\u4e2d\u5fc3\uff0c\u666e\u901a\u4efb\u52a1\u65e0\u9700\u989d\u5916\u7ba1\u7406\u6587\u6863\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-09-15T06:41:47Z",
-      "updated_at_ns": 1789454507834908000,
+      "status": "VERIFIED",
+      "updated_at": "2026-09-15T06:57:12Z",
+      "updated_at_ns": 1789455432902980000,
       "verified_by": [
         "CHK-ALL"
       ]
@@ -138,19 +152,19 @@
       "basis": [
         "\u51cf\u5c11\u5f62\u5f0f\u8d1f\u62c5\uff0c\u540c\u65f6\u4fdd\u7559\u5173\u952e\u884c\u4e3a\u573a\u666f\u8ffd\u8e2a\u3002"
       ],
-      "evidence": null,
+      "evidence": "CHK-ALL \u9a8c\u8bc1\u4ec5 goal.md \u7684\u4e24\u573a\u666f\u8def\u5f84\u901a\u8fc7\u3001\u5355\u573a\u666f\u963b\u65ad\u3001\u53ef\u9009\u6587\u4ef6\u4ecd\u53d7\u4e00\u81f4\u6027\u68c0\u67e5\u3002",
       "failure_modes": [
         "\u7f3a\u5c11 MUST \u5173\u8054\u573a\u666f\u5fc5\u987b\u963b\u65ad\uff1b\u53ef\u9009\u6587\u4ef6\u4e00\u65e6\u5b58\u5728\u4e0d\u80fd\u5305\u542b\u65e0\u6548\u5f15\u7528\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "93d1545543eff9b9e879fa47d1e0811a6de65ce7",
       "kind": "must",
       "minimum_evidence_mode": "real",
-      "product_fingerprint": null,
+      "product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
       "proves": "\u63a7\u5236\u5668\u6d4b\u8bd5\u8986\u76d6\u65e0\u989d\u5916\u6587\u4ef6\u3001\u573a\u666f\u4e0d\u8db3\u3001\u53ef\u9009\u589e\u5f3a\u6587\u4ef6\u6709\u6548\u548c\u5f15\u7528\u9519\u8bef\u3002",
       "statement": "behavior-change \u53ef\u4ec5\u7528 `goal.md` \u4e2d\u7684\u573a\u666f\u901a\u8fc7\u8bed\u4e49 review\uff0c\u81f3\u5c11\u4e24\u4e2a\u6709\u6548\u573a\u666f\uff1b\u5b58\u5728 `delta.md` \u6216 `tasks.md` \u65f6\u4ecd\u6821\u9a8c\u5176\u4e00\u81f4\u6027\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-09-15T06:41:47Z",
-      "updated_at_ns": 1789454507972711000,
+      "status": "VERIFIED",
+      "updated_at": "2026-09-15T06:57:13Z",
+      "updated_at_ns": 1789455433088631000,
       "verified_by": [
         "CHK-ALL"
       ]
@@ -159,19 +173,19 @@
       "basis": [
         "\u7528\u6237\u8981\u6c42\u5173\u6ce8\u529f\u80fd\u3001\u6027\u80fd\u3001\u5408\u7406\u67b6\u6784\u548c\u540e\u7eed\u8fed\u4ee3\u3002"
       ],
-      "evidence": null,
+      "evidence": "CHK-ALL \u9a8c\u8bc1 Standard \u4e09\u4e2a\u8d28\u91cf\u7126\u70b9\u3001\u5b8c\u6574\u6d41\u7a0b\u4e94\u9879\u7126\u70b9\u3001\u5b9e\u65bd\u4e00\u81f4\u6027\u590d\u6838\u548c\u7ecf\u5178\u573a\u666f\u6587\u6848\u5951\u7ea6\u3002",
       "failure_modes": [
         "\u6027\u80fd\u4e0d\u76f8\u5173\u65f6\u5141\u8bb8\u6709\u4f9d\u636e\u7684 N_A\uff1b\u4e0d\u5f3a\u5236\u7a77\u4e3e\u4e94\u7c7b\u573a\u666f\u3002"
       ],
-      "git_sha": null,
+      "git_sha": "93d1545543eff9b9e879fa47d1e0811a6de65ce7",
       "kind": "must",
       "minimum_evidence_mode": "real",
-      "product_fingerprint": null,
+      "product_fingerprint": "5686da4b26d23905e1d10dc7921aaa7ce8f4cb159bf7d5c2155efc050a033ba5",
       "proves": "\u5168\u91cf\u5355\u5143\u6d4b\u8bd5\u548c\u6587\u6863\u4ea4\u4e92\u6d4b\u8bd5\u8bc1\u660e\u7ef4\u5ea6\u96c6\u5408\u3001\u5b9e\u65bd\u590d\u6838\u4e0e\u7ecf\u5178\u573a\u666f\u89c4\u5219\u4e00\u81f4\u3002",
       "statement": "Standard \u660e\u786e\u8bc4\u4f30\u529f\u80fd\u3001\u6027\u80fd/\u53ef\u9760\u6027\u548c\u53ef\u8fed\u4ee3\u6027\uff1b\u5b8c\u6574\u6d41\u7a0b\u589e\u52a0\u5173\u952e\u8fb9\u754c\u4e0e\u56de\u5f52\uff0c\u5e76\u5728\u5b9e\u65bd\u548c\u9a8c\u6536\u534f\u8bae\u4e2d\u4f7f\u7528 3\uff5e5 \u4e2a\u7ecf\u5178\u573a\u666f\u4e0e\u65b9\u6848\u2014\u4ee3\u7801\u4e00\u81f4\u590d\u6838\u3002",
-      "status": "UNVERIFIED",
-      "updated_at": "2026-09-15T06:41:48Z",
-      "updated_at_ns": 1789454508153687000,
+      "status": "VERIFIED",
+      "updated_at": "2026-09-15T06:57:13Z",
+      "updated_at_ns": 1789455433264132000,
       "verified_by": [
         "CHK-ALL"
       ]
@@ -181,11 +195,11 @@
   "resume_status": null,
   "risks": {},
   "schema_version": 3,
-  "state_revision": 12,
-  "status": "EXECUTING",
+  "state_revision": 17,
+  "status": "READY_FOR_ACCEPTANCE",
   "stop_repeat_count": 0,
   "title": "\u7cbe\u7b80 Goal Flow \u8d28\u91cf\u95ed\u73af",
-  "updated_at": "2026-09-15T06:54:42Z",
+  "updated_at": "2026-09-15T06:57:18Z",
   "wait_reason": null,
   "worktree_binding": {
     "branch": "codex/goal-flow-streamline-quality-loop",
